@@ -11,11 +11,12 @@ export const TEST_COMMANDS: readonly RegExp[] = [
   new RegExp(String.raw`${SEP}(?:vitest|jest|pytest|rspec|phpunit)(?=\s|$)`),
   new RegExp(String.raw`${SEP}(?:python3?|py)\s+-m\s+pytest\b`),
   new RegExp(String.raw`${SEP}(?:go|cargo|mvn|gradle|dotnet)\s+test\b`),
-  new RegExp(String.raw`${SEP}\./gradlew\s+test\b`),
+  new RegExp(String.raw`${SEP}(?:\.(?:\/|\\))?gradlew(?:\.bat)?\s+test\b`),
 ]
 
 export function isTestCommand(cmd: string): boolean {
-  return TEST_COMMANDS.some(re => re.test(cmd))
+  const clean = unquoted(cmd)
+  return TEST_COMMANDS.some(re => re.test(clean))
 }
 
 // 去掉引號內的字串：只是「提到」危險指令（commit 訊息、grep 關鍵字）不算
@@ -35,10 +36,19 @@ function shortFlags(words: string[]): string {
   return words.filter(w => /^-[A-Za-z]+$/.test(w)).map(w => w.slice(1)).join('')
 }
 
+// Watched dangerous commands:
+// - rm -rf (recursive + force delete)
+// - git push --force (force push)
+// - git reset --hard (hard reset)
+// - git clean -fd (clean with remove untracked)
+// - chmod -R 777 (world writable recursive)
+// - SQL DROP TABLE / DROP DATABASE / TRUNCATE
+
 const SQL: readonly [RegExp, string][] = [
   [/\bDROP\s+TABLE\b/i, 'DROP TABLE'],
   [/\bDROP\s+DATABASE\b/i, 'DROP DATABASE'],
-  [/\bTRUNCATE\s+(?:TABLE\s+)?[A-Za-z_`"[]/i, 'TRUNCATE'],
+  [/\bTRUNCATE\s+TABLE\s+[A-Za-z_]/i, 'TRUNCATE'],
+  [/\bTRUNCATE\s+[A-Za-z_][A-Za-z0-9_]*\b/, 'TRUNCATE'],
 ]
 
 export function dangerKeyword(cmd: string): string | null {
@@ -56,7 +66,7 @@ export function dangerKeyword(cmd: string): string | null {
       }
     }
     if (head === 'git' && sub === 'reset' && words.includes('--hard')) return 'git reset --hard'
-    if (head === 'git' && sub === 'clean' && flags.includes('f') && flags.includes('d')) return 'git clean -fd'
+    if (head === 'git' && sub === 'clean' && flags.includes('f') && flags.includes('d') && !flags.includes('n') && !words.includes('--dry-run')) return 'git clean -fd'
     if (head === 'chmod' && (flags.includes('R') || words.includes('--recursive')) && words.some(w => w === '777' || w === '0777')) {
       return 'chmod -R 777'
     }
@@ -72,8 +82,9 @@ export function observe(tool: string, command: string, ran: { deny?: string; isE
   if (ran.deny !== undefined) return null
   const failed = ran.isError === true
   const isShell = (OBSERVED_TOOLS as readonly string[]).includes(tool)
-  const test = isShell && isTestCommand(command) ? (failed ? 'fail' : 'pass') : null
-  const danger = isShell ? dangerKeyword(command) : null
+  const cmd = typeof command === 'string' ? command : ''
+  const test = isShell && isTestCommand(cmd) ? (failed ? 'fail' : 'pass') : null
+  const danger = isShell ? dangerKeyword(cmd) : null
   if (!failed && test === null && danger === null) return null
   return { failed, test, danger }
 }
