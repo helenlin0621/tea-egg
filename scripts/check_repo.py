@@ -16,7 +16,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "spoilers.source.json"
 NEVER_TRACK = ("tea-egg-design.md", "spoilers.source.json")
-NEVER_TRACK_DIRS = ("art-source/", "art-build/", "docs/superpowers/")
+NEVER_TRACK_DIRS = ("art-source/", "art-build/", "docs/superpowers/", ".superpowers/")
 NEVER_TRACK_EXT = (".png",)
 # 編碼後的劇透檔本身不掃（內容是 base64）
 SKIP_CONTENT = ("hooks/spoilers.ts",)
@@ -48,9 +48,14 @@ def scan_text(label, text, words, patterns):
     return problems
 
 
+def git_paths(*args):
+    raw = git(*args, "-z", binary=True)
+    return [p.decode("utf-8", "replace") for p in raw.split(b"\0") if p]
+
+
 def bad_path(path):
     return (
-        path in NEVER_TRACK
+        path.rsplit("/", 1)[-1] in NEVER_TRACK
         or path.startswith(NEVER_TRACK_DIRS)
         or path.lower().endswith(NEVER_TRACK_EXT)
     )
@@ -65,24 +70,44 @@ def check_files(paths, read, words, patterns):
         problems += scan_text(f"{path}（檔名）", path, words, patterns)
         if path in SKIP_CONTENT:
             continue
-        data = read(path)
+        try:
+            data = read(path)
+        except Exception:
+            problems.append(f"{path}: 無法讀取，請手動確認")
+            continue
         if b"\0" in data[:4096]:
             continue
         problems += scan_text(path, data.decode("utf-8", "replace"), words, patterns)
     return problems
 
 
+def message_body(text):
+    kept = []
+    for line in text.splitlines():
+        if line.startswith("# ------------------------ >8"):
+            break
+        if line.startswith("#"):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def main(argv):
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     words, patterns = load_guard()
     mode = argv[1] if len(argv) > 1 else "--all"
     if mode == "--staged":
-        paths = [p for p in git("diff", "--cached", "--name-only", "--diff-filter=ACMR").splitlines() if p]
+        paths = git_paths("diff", "--cached", "--name-only", "--diff-filter=ACMR")
         problems = check_files(paths, lambda p: git("show", f":{p}", binary=True), words, patterns)
     elif mode == "--msg":
         text = pathlib.Path(argv[2]).read_text("utf-8")
-        problems = scan_text("commit 訊息", text, words, patterns)
+        problems = scan_text("commit 訊息", message_body(text), words, patterns)
     elif mode == "--all":
-        paths = [p for p in git("ls-files").splitlines() if p]
+        paths = git_paths("ls-files")
         problems = check_files(paths, lambda p: (ROOT / p).read_bytes(), words, patterns)
         problems += scan_text("commit 歷史訊息", git("log", "--all", "--format=%B"), words, patterns)
         problems += scan_text("分支名稱", git("branch", "-a", "--format=%(refname)"), words, patterns)
