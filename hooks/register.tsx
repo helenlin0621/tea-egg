@@ -5,6 +5,7 @@ import { onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
 import { STORE_KEY } from './model'
 import { mutate, type StoreIo } from './store'
 import { TEXT } from './text'
+import { bandSegments, fitSegments } from './view'
 
 // state 參照的 plugin / key 必須是字面值，且寫在使用 $.state 的這個檔案裡
 const SAVE_REF = { plugin: 'tea-egg', key: 'save' } as const
@@ -82,6 +83,28 @@ export const register: Register = on => {
       // 靜默略過
     }
     return ran
+  })
+
+  // 輸入框上方的橫條；出錯或有問卷時一律讓路
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    try {
+      if (e.props.hasSurvey) return next(e)
+      const save = (await $.state.get(SAVE_REF)).value
+      if (!save) return next(e)
+      const now = await $.clock.now()
+      const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
+      const segs = fitSegments(bandSegments(save, localNow(now), now), columns)
+      const { Box, Text } = $.ui.resolve(e)
+      return (
+        <Box>
+          {segs.map((seg, i) => (
+            <Text key={String(i)} color={seg.color} dimColor={seg.dim}>{seg.text}</Text>
+          ))}
+        </Box>
+      )
+    } catch {
+      return next(e)
+    }
   })
 
   on('command.run', { command: 'egg' }, async ($, e) => {
