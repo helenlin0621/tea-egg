@@ -2,9 +2,6 @@ import type { Save } from '../types'
 import type { Step } from './engine'
 import { parseSave } from './model'
 
-export const SAVE_REF = { plugin: 'tea-egg', key: 'save' } as const
-export const SHOW_DEX_REF = { plugin: 'tea-egg', key: 'showDex' } as const
-export const COUNTED_REF = { plugin: 'tea-egg', key: 'sessionCounted' } as const
 
 // 外掛載入器不跟隨 $ 跨 import，所以 $.xxx 呼叫都留在 register.tsx，這裡只拿到包好的 StoreIo
 export type StoreIo = {

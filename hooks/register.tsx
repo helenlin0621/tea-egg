@@ -3,8 +3,13 @@ import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTim
 import { observe, OBSERVED_TOOLS } from './detect'
 import { onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
 import { STORE_KEY } from './model'
-import { COUNTED_REF, SAVE_REF, mutate, type StoreIo } from './store'
+import { mutate, type StoreIo } from './store'
 import { TEXT } from './text'
+
+// state 參照的 plugin / key 必須是字面值，且寫在使用 $.state 的這個檔案裡
+const SAVE_REF = { plugin: 'tea-egg', key: 'save' } as const
+const SHOW_DEX_REF = { plugin: 'tea-egg', key: 'showDex' } as const
+const COUNTED_REF = { plugin: 'tea-egg', key: 'sessionCounted' } as const
 
 export const PANE = 'tea-egg'
 const TICK_MS = 60_000
@@ -24,11 +29,7 @@ const ioOf = ($: EngineInterface): StoreIo => ({
   read: () => $.store.get(STORE_KEY),
   write: async save => {
     await $.store.set(STORE_KEY, save)
-    try {
-      await $.state.set(SAVE_REF, save) // 給畫面讀的鏡像；$.store 才是存檔本體，失敗不影響存檔
-    } catch {
-      // 靜默略過
-    }
+    await $.state.set(SAVE_REF, save)
   },
   toast: text => {
     $.ui.toast(text)
@@ -45,20 +46,9 @@ export const register: Register = on => {
         loadedAt: now,
       }
       await $.command.register({ name: 'egg', description: '茶葉蛋養成計畫：/egg [refill|flip|dex|name 名字|help]' })
-      let counted = false
-      try {
-        counted = (await $.state.get(COUNTED_REF)).value === true
-      } catch {
-        // 讀不到就當作還沒算過
-      }
+      const counted = (await $.state.get(COUNTED_REF)).value === true
       await mutate(ioOf($), (s, at) => onSessionOpen(s, at, localNow(at), !counted))
-      if (!counted) {
-        try {
-          await $.state.set(COUNTED_REF, true)
-        } catch {
-          // 靜默略過
-        }
-      }
+      if (!counted) await $.state.set(COUNTED_REF, true)
       $.clock.every(TICK_MS, () => {
         void mutate(ioOf($), (s, at) => onTick(s, at, localNow(at), rng)).catch(() => undefined)
       })
