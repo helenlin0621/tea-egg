@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SOURCE = join(ROOT, 'spoilers.source.json')
 const SPRITES = join(ROOT, 'art-build', 'spoiler_sprites.json')
-const OUT = join(ROOT, 'hooks', 'spoilers.ts')
+const SPRITES_HD = join(ROOT, 'art-build', 'spoiler_sprites_hd.json')
+const OUT =join(ROOT, 'hooks', 'spoilers.ts')
 const LINE = 96
 
 const HEADER = `// 圖鑑條件與彩蛋內容經過 base64 編碼，避免劇透收集的樂趣。
@@ -46,6 +47,7 @@ function payload(): Record<string, unknown> {
   delete data.guard
   if (existsSync(SPRITES)) data.sprites = JSON.parse(readFileSync(SPRITES, 'utf8'))
   data.sprites ??= {}
+  data.spritesHd = existsSync(SPRITES_HD) ? JSON.parse(readFileSync(SPRITES_HD, 'utf8')) : {}
   return data
 }
 

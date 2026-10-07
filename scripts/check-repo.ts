@@ -17,7 +17,7 @@ const NEVER_TRACK = ['tea-egg-design.md', 'spoilers.source.json']
 const NEVER_TRACK_DIRS = ['art-source/', 'art-build/', 'docs/superpowers/', '.superpowers/', 'node_modules/']
 const NEVER_TRACK_EXT = ['.png']
 // 編碼後的劇透檔本身不掃（內容是 base64）
-const SKIP_CONTENT = ['hooks/spoilers.ts']
+const SKIP_CONTENT = ['hooks/spoilers.ts', 'hooks/sprites-hd.ts']
 const SCISSORS = '# ------------------------ >8'
 
 type Guard = { words: string[]; patterns: RegExp[]; invalid: string[] }

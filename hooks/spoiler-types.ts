@@ -39,4 +39,5 @@ export type Spoilers = {
   dexSlots: string[] // 9 格的順序，最後一格是 dateMode.prize
   dateMode: DateMode
   sprites: Record<string, string>
+  spritesHd?: Record<string, string> // 桌面版高解析 PNG（base64）
 }

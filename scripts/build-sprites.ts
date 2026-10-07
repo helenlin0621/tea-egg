@@ -386,12 +386,119 @@ function writePreview(path: string, palette: number[], sprites: Map<string, stri
   writeFileSync(path, PNG.sync.write(png))
 }
 
+
+// ---- 高解析（HD）版：原圖軟去背 → 裁切 → 面積平均縮小 → 144×144 畫布 ----
+const HD_CANVAS = 144
+const HD_FIT = 136
+const HD_BOTTOM = 4
+const KEY_FULL = 150 // m = min(r,b) − g 超過此值：全透明
+const KEY_SOFT = 60 // 介於兩者之間：半透明並去洋紅溢色
+
+function softKey(cell: Img): Img {
+  const out = blank(cell.width, cell.height, [0, 0, 0, 0])
+  for (let i = 0; i < cell.data.length; i += 4) {
+    let r = cell.data[i]!, g = cell.data[i + 1]!, b = cell.data[i + 2]!
+    let a = cell.data[i + 3]!
+    const m = Math.min(r, b) - g
+    if (m > KEY_FULL) a = 0
+    else if (m > KEY_SOFT) {
+      a = Math.round((a * (KEY_FULL - m)) / (KEY_FULL - KEY_SOFT))
+      r = Math.max(0, r - (m - KEY_SOFT)); b = Math.max(0, b - (m - KEY_SOFT))
+    }
+    out.data.set([r, g, b, a], i)
+  }
+  return out
+}
+
+// 面積平均（box filter），在預乘 alpha 空間計算；放大時退化成最近鄰
+function boxScale(src: Img, w: number, h: number): Img {
+  const out = blank(w, h, [0, 0, 0, 0])
+  const sx = src.width / w, sy = src.height / h
+  for (let y = 0; y < h; y++) {
+    const y0 = y * sy, y1 = (y + 1) * sy
+    for (let x = 0; x < w; x++) {
+      const x0 = x * sx, x1 = (x + 1) * sx
+      let r = 0, g = 0, b = 0, a = 0, wsum = 0
+      for (let j = Math.floor(y0); j < Math.min(src.height, Math.ceil(y1)); j++) {
+        const wy = Math.min(j + 1, y1) - Math.max(j, y0)
+        for (let i = Math.floor(x0); i < Math.min(src.width, Math.ceil(x1)); i++) {
+          const wt = wy * (Math.min(i + 1, x1) - Math.max(i, x0))
+          const k = (j * src.width + i) * 4
+          const al = src.data[k + 3]! / 255
+          r += src.data[k]! * al * wt; g += src.data[k + 1]! * al * wt; b += src.data[k + 2]! * al * wt
+          a += al * wt; wsum += wt
+        }
+      }
+      if (wsum === 0 || a === 0) continue
+      out.data.set([Math.round(r / a), Math.round(g / a), Math.round(b / a), Math.round((a / wsum) * 255)], (y * w + x) * 4)
+    }
+  }
+  return out
+}
+
+function toHd(cell: Img): Img | null {
+  const keyed = softKey(cell)
+  const box = bboxAlpha(keyed)
+  if (!box) return null
+  const body = crop(keyed, ...box)
+  const r = Math.min(HD_FIT / body.width, HD_FIT / body.height)
+  const w = Math.max(1, Math.round(body.width * r)), h = Math.max(1, Math.round(body.height * r))
+  const sprite = boxScale(body, Math.min(w, HD_FIT), Math.min(h, HD_FIT))
+  const out = blank(HD_CANVAS, HD_CANVAS, [0, 0, 0, 0])
+  const ox = Math.floor((HD_CANVAS - sprite.width) / 2), oy = HD_CANVAS - HD_BOTTOM - sprite.height
+  for (let y = 0; y < sprite.height; y++) {
+    out.data.set(sprite.data.subarray(y * sprite.width * 4, (y + 1) * sprite.width * 4), ((y + oy) * HD_CANVAS + ox) * 4)
+  }
+  return out
+}
+
+function pngBase64(img: Img): string {
+  const png = new PNG({ width: img.width, height: img.height })
+  png.data = Buffer.from(img.data)
+  return PNG.sync.write(png).toString('base64')
+}
+
+function writeHdTs(path: string, sprites: Map<string, string>): void {
+  const lines = [
+    '// 本檔由 scripts/build-sprites.ts 產生，請勿手動修改。',
+    '// 桌面版面板用的高解析圖：144×144 透明底 PNG 的 base64。',
+    '',
+    'export const SPRITES_HD: Readonly<Record<string, string>> = {',
+  ]
+  for (const [name, b64] of sprites) lines.push(`  ${name}: '${b64}',`)
+  lines.push('}')
+  writeFileSync(path, lines.join('\n') + '\n', 'utf8')
+}
+
+// 全部 HD 圖（含劇透）疊在深褐底卡上排成一列，人工確認用
+function writeHdPreview(path: string, images: Map<string, Img>): void {
+  const pad = 8
+  const n = Math.max(images.size, 1)
+  const png = new PNG({ width: pad + n * (HD_CANVAS + pad), height: HD_CANVAS + pad * 2 })
+  for (let i = 0; i < png.data.length; i += 4) png.data.set([0x3b, 0x2f, 0x2a, 255], i)
+  let k = 0
+  for (const img of images.values()) {
+    const ox = pad + k * (HD_CANVAS + pad)
+    for (let y = 0; y < HD_CANVAS; y++) {
+      for (let x = 0; x < HD_CANVAS; x++) {
+        const s = (y * HD_CANVAS + x) * 4
+        const al = img.data[s + 3]! / 255
+        const d = ((pad + y) * png.width + ox + x) * 4
+        for (let c = 0; c < 3; c++) png.data[d + c] = Math.round(img.data[s + c]! * al + png.data[d + c]! * (1 - al))
+      }
+    }
+    k++
+  }
+  writeFileSync(path, PNG.sync.write(png))
+}
+
 function main(argv: string[]): number {
   const at = argv.indexOf('--source')
   const src = resolve(ROOT, at >= 0 && argv[at + 1] ? argv[at + 1]! : 'art-source')
   const manifest = JSON.parse(readFileSync(join(src, 'manifest.json'), 'utf8')) as Manifest
   const images = new Map<string, Img>()
   const spoilerNames = new Set<string>()
+  const hd = new Map<string, Img>()
   for (const sheet of manifest.sheets) {
     const png = PNG.sync.read(readFileSync(join(src, sheet.file)))
     const cells = splitSheet({ width: png.width, height: png.height, data: png.data })
@@ -402,6 +509,8 @@ function main(argv: string[]): number {
     sheet.cells.forEach((name, i) => {
       const info = toSize(cells[i]!)
       images.set(name, info.img)
+      const big = toHd(cells[i]!)
+      if (big) hd.set(name, big)
       console.log(`  ${name}: ${info.mode} 色塊 ${info.bx.toFixed(2)}×${info.by.toFixed(2)}，格線分數 ${info.scoreX.toFixed(2)}/${info.scoreY.toFixed(2)}`)
       if (sheet.spoiler) spoilerNames.add(name)
     })
@@ -413,7 +522,11 @@ function main(argv: string[]): number {
   mkdirSync(join(ROOT, 'art-build'), { recursive: true })
   writeFileSync(join(ROOT, 'art-build', 'spoiler_sprites.json'), JSON.stringify(secret), 'utf8')
   writePreview(join(ROOT, 'art-build', 'preview.png'), palette, pub)
-  console.log(`調色盤 ${palette.length} 色；公開 ${pub.size} 張、編碼 ${Object.keys(secret).length} 張`)
+  const hdB64 = new Map([...hd].map(([n, img]) => [n, pngBase64(img)] as const))
+  writeHdTs(join(ROOT, 'hooks', 'sprites-hd.ts'), new Map([...hdB64].filter(([n]) => !spoilerNames.has(n))))
+  writeFileSync(join(ROOT, 'art-build', 'spoiler_sprites_hd.json'), JSON.stringify(Object.fromEntries([...hdB64].filter(([n]) => spoilerNames.has(n)))), 'utf8')
+  writeHdPreview(join(ROOT, 'art-build', 'preview-hd.png'), hd)
+  console.log(`調色盤 ${palette.length} 色；公開 ${pub.size} 張（HD ${hd.size} 張）、編碼 ${Object.keys(secret).length} 張`)
   return 0
 }
 

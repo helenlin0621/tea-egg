@@ -33,7 +33,7 @@ export const SPOILERS =
   "c3QifSx7ImVnZyI6ImU0IiwibWluUnVucyI6NSwicmF0ZSI6MC41LCJ3aGVuIjoiZmFpbFJhdGVBYm92ZSJ9LHsiZGF5cyI6" +
   "MjEsImVnZyI6ImU1Iiwid2hlbiI6ImFnZUF0TGVhc3QifSx7ImVnZyI6ImU2IiwibWludXRlcyI6MTIwLCJ3aGVuIjoiYXZn" +
   "U2Vzc2lvbkFib3ZlIn0seyJlZ2ciOiJlNyIsIm1pbnV0ZXMiOjIwLCJ3aGVuIjoiYXZnU2Vzc2lvbkJlbG93In0seyJlZ2ci" +
-  "OiJlOCIsIndoZW4iOiJhbHdheXMifV0sInNwcml0ZXMiOnt9fQ=="
+  "OiJlOCIsIndoZW4iOiJhbHdheXMifV0sInNwcml0ZXMiOnt9LCJzcHJpdGVzSGQiOnt9fQ=="
 
 let cache: Spoilers | null = null
 

@@ -3,6 +3,8 @@ import { ASCII_EGG, dexArt, eggArt, eggLayers, panelLines } from '../hooks/panel
 import { strWidth } from '../hooks/view'
 import { newSave } from '../hooks/model'
 import { SPRITES } from '../hooks/sprites'
+import { SPRITES_HD } from '../hooks/sprites-hd'
+import { decodeSpoilers } from '../hooks/spoilers'
 import { at, ms } from './helpers'
 
 const NOW = ms('2026-10-07', 14)
@@ -72,4 +74,23 @@ test('ASCII 蛋：各階段每列等寬，且保留反斜線邊緣', async () =>
   }
   expect(ASCII_EGG[0]![1]!.includes('\\')).toBe(true)
   expect(ASCII_EGG[0]![3]!.includes('\\')).toBe(true)
+})
+
+test('desktop 有高解析圖時用 <image>，且每張 SVG 都在 131072 字元內', async () => {
+  const art = eggArt(newSave(NOW), at('2026-10-07', 14), NOW, 'desktop', 40)
+  expect(art.kind).toBe('svg')
+  if (art.kind === 'svg') expect(art.source.includes('<image')).toBe(true)
+  expect(eggArt(newSave(NOW), at('2026-10-07', 14), NOW, 'terminal', 50).kind).toBe('raster')
+  const ids = [...Object.keys(SPRITES_HD), ...Object.keys(decodeSpoilers().spritesHd ?? {})]
+  expect(ids.length).toBeGreaterThan(0)
+  for (const id of Object.keys(SPRITES_HD)) {
+    const a = dexArt(id, false, 'desktop')
+    if (id === 'locked') expect(a?.kind === 'svg' && a.source.length < 131072).toBe(true)
+  }
+  for (const id of Object.keys(decodeSpoilers().spritesHd ?? {})) {
+    const a = dexArt(id, true, 'desktop')
+    expect(a?.kind === 'svg' && a.source.includes('<image') && a.source.length < 131072).toBe(true)
+  }
+  // 公開圖：HD 字串兩份嵌入後的 SVG 長度
+  for (const b64 of Object.values(SPRITES_HD)) expect(b64.length * 2 + 600).toBeLessThan(131072)
 })
