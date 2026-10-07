@@ -84,16 +84,99 @@ function splitSheet(img: Img): Img[] {
   return cells
 }
 
-// 裁到非洋紅範圍 → 補成正方形 → 最近鄰縮成 SIZE×SIZE；洋紅變透明（alpha 0）
-function toSize(cell: Img): Img {
-  let minX = cell.width, minY = cell.height, maxX = -1, maxY = -1
-  for (let y = 0; y < cell.height; y++) {
-    for (let x = 0; x < cell.width; x++) {
-      if (isMagenta(pixel(cell, x, y))) continue
+// ---- 對齊原圖格線取樣 ----
+// AI 生成的「像素圖」每個畫素是約 8–24 個真實像素的色塊（大小不完全一致）。
+// 直接最近鄰縮成 48×48 會讓部分畫素佔 1 格、部分佔 2 格而鋸齒。
+// 做法：每個軸各自用「顏色跳變直方圖」找出色塊大小 b 與起點 o，再在每個色塊中心取樣。
+const EDGE_DIFF = 60 // 相鄰像素 |dr|+|dg|+|db| 超過此值算一次顏色跳變
+const B_MIN = 8, B_MAX = 24, B_STEP = 0.25, O_STEP = 0.1
+const SMALL_BLOCK_PENALTY = 0.02 // 對小色塊的輕微扣分（避免格線細到什麼都蓋到）
+// 格線分數 = 最佳格線的跳變質量 ÷ 所有候選格線的平均質量（lift）。真實圖約 2.5–3.1。
+// 低於此值（接近 1：隨便切都差不多＝完全沒格線）才退回舊的裁切＋縮放。
+// 注意：make-test-sheet 的合成蛋輪廓是階梯狀，也會擬合出約 2.7 的假格線，所以仍走 grid 路徑（不會崩，只是沒意義）；此門檻只擋真正無結構的圖。
+const GRID_MIN_SCORE = 1.5
+
+function edgeHistogram(cell: Img, axis: 0 | 1): number[] {
+  const n = axis === 0 ? cell.width : cell.height
+  const m = axis === 0 ? cell.height : cell.width
+  const e = new Array<number>(n).fill(0)
+  for (let j = 0; j < m; j++) {
+    for (let i = 1; i < n; i++) {
+      const a = axis === 0 ? pixel(cell, i, j) : pixel(cell, j, i)
+      const b = axis === 0 ? pixel(cell, i - 1, j) : pixel(cell, j, i - 1)
+      if (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) > EDGE_DIFF) e[i]!++
+    }
+  }
+  return e
+}
+
+function fitAxis(e: number[]): { b: number; o: number; score: number } {
+  let sum = 0, cnt = 0
+  const n = e.length
+  const tot = e.reduce((s, v) => s + v, 0) || 1
+  let best = { b: B_MIN, o: 0, score: 0 }
+  let bestAdj = -Infinity
+  for (let b = B_MIN; b <= B_MAX; b += B_STEP) {
+    for (let o10 = 0; o10 < Math.round(b / O_STEP); o10++) {
+      const o = o10 * O_STEP
+      let s = 0
+      for (let k = o; k < n; k += b) {
+        const i = Math.round(k)
+        for (let d = -1; d <= 1; d++) if (i + d >= 0 && i + d < n) s += e[i + d]! * (d === 0 ? 1 : 0.5)
+      }
+      const raw = s / tot
+      sum += raw; cnt++
+      const score = raw - (SMALL_BLOCK_PENALTY * (n / b)) / 10
+      if (score > bestAdj) { bestAdj = score; best = { b, o, score: raw } } // 以含扣分的分數選最佳；回報未扣分的比例
+    }
+  }
+  // 回報「最佳格線分數 ÷ 所有候選格線的平均分數」：真有格線時遠大於 1，沒格線（隨便切都差不多）時接近 1
+  return { ...best, score: best.score / (sum / cnt) }
+}
+
+// 裁到非洋紅範圍（回傳 bbox）；全洋紅則回傳 null
+function bbox(img: Img): [number, number, number, number] | null {
+  let minX = img.width, minY = img.height, maxX = -1, maxY = -1
+  for (let y = 0; y < img.height; y++) {
+    for (let x = 0; x < img.width; x++) {
+      if (isMagenta(pixel(img, x, y))) continue
       minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
     }
   }
-  const body = maxX < 0 ? cell : crop(cell, minX, minY, maxX + 1, maxY + 1)
+  return maxX < 0 ? null : [minX, minY, maxX + 1, maxY + 1]
+}
+
+// 依格線取樣成「原生」像素圖（色塊 = 1 畫素），洋紅變透明，裁到非透明範圍
+function sampleNative(cell: Img, bx: number, ox: number, by: number, oy: number): Img | null {
+  const nx = Math.floor((cell.width - ox) / bx), ny = Math.floor((cell.height - oy) / by)
+  const out = blank(nx, ny, [0, 0, 0, 0])
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const x = Math.floor(ox + (i + 0.5) * bx), y = Math.floor(oy + (j + 0.5) * by)
+      if (x >= cell.width || y >= cell.height) continue
+      const p = pixel(cell, x, y)
+      if (!isMagenta(p)) out.data.set([p[0], p[1], p[2], 255], (j * nx + i) * 4)
+    }
+  }
+  const box = bboxAlpha(out)
+  return box ? crop(out, ...box) : null
+}
+
+function bboxAlpha(img: Img): [number, number, number, number] | null {
+  let minX = img.width, minY = img.height, maxX = -1, maxY = -1
+  for (let y = 0; y < img.height; y++) {
+    for (let x = 0; x < img.width; x++) {
+      if (img.data[(y * img.width + x) * 4 + 3]! === 0) continue
+      minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
+    }
+  }
+  return maxX < 0 ? null : [minX, minY, maxX + 1, maxY + 1]
+}
+
+// 舊做法（沒有格線時的退路）：裁到非洋紅範圍 → 補成正方形 → 最近鄰縮成 SIZE×SIZE
+function cropAndResize(cell: Img): Img {
+  const box = bbox(cell)
+  const body = box ? crop(cell, ...box) : cell
   const side = Math.max(body.width, body.height)
   const square = blank(side, side, [255, 0, 255, 255])
   const ox = Math.floor((side - body.width) / 2)
@@ -109,6 +192,35 @@ function toSize(cell: Img): Img {
     }
   }
   return out
+}
+
+type SpriteInfo = { img: Img; mode: 'grid' | 'fallback'; bx: number; by: number; scoreX: number; scoreY: number }
+
+function toSize(cell: Img): SpriteInfo {
+  const fx = fitAxis(edgeHistogram(cell, 0)), fy = fitAxis(edgeHistogram(cell, 1))
+  const native = fx.score >= GRID_MIN_SCORE && fy.score >= GRID_MIN_SCORE ? sampleNative(cell, fx.b, fx.o, fy.b, fy.o) : null
+  if (!native) return { img: cropAndResize(cell), mode: 'fallback', bx: fx.b, by: fy.b, scoreX: fx.score, scoreY: fy.score }
+  // 超過 SIZE 才最近鄰縮小到放得下；否則不縮放。水平置中、底部對齊（讓花盆在各張間對齊）
+  let sprite = native
+  const longest = Math.max(native.width, native.height)
+  if (longest > SIZE) {
+    const r = SIZE / longest
+    const w = Math.max(1, Math.floor(native.width * r)), h = Math.max(1, Math.floor(native.height * r))
+    const scaled = blank(w, h, [0, 0, 0, 0])
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p = pixel(native, Math.min(native.width - 1, Math.floor((x + 0.5) / r)), Math.min(native.height - 1, Math.floor((y + 0.5) / r)))
+        scaled.data.set(p, (y * w + x) * 4)
+      }
+    }
+    sprite = scaled
+  }
+  const out = blank(SIZE, SIZE, [0, 0, 0, 0])
+  const ox = Math.floor((SIZE - sprite.width) / 2), oy = SIZE - sprite.height
+  for (let y = 0; y < sprite.height; y++) {
+    out.data.set(sprite.data.subarray(y * sprite.width * 4, (y + 1) * sprite.width * 4), ((y + oy) * SIZE + ox) * 4)
+  }
+  return { img: out, mode: 'grid', bx: fx.b, by: fy.b, scoreX: fx.score, scoreY: fy.score }
 }
 
 // median cut：每次切開「單一色版範圍最大」的盒子，直到 count 個或無法再切
@@ -144,6 +256,46 @@ function nearest(palette: Rgb[], c: Rgb): number {
   return best
 }
 
+const RARE_DIST = 60 // 與最近調色盤色相差（RGB 絕對差總和）超過此值的像素算「被吃掉的稀有色」
+const RARE_MAX_ITER = 16
+
+// median cut 會把稀有但顯眼的色（如藍色 zZ、綠葉）併進大宗色。這裡把這些色補回：
+// 只要還有像素離調色盤太遠，就把最接近的兩個調色盤色（依像素數加權平均）合併，並把該像素色加進調色盤。
+function protectRare(palette: Rgb[], opaque: Rgb[]): void {
+  const dist = (a: Rgb, b: Rgb) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2])
+  const counts = new Map<string, { c: Rgb; n: number }>()
+  for (const c of opaque) {
+    const k = c.join(",")
+    const e = counts.get(k)
+    if (e) e.n++; else counts.set(k, { c, n: 1 })
+  }
+  const distinct = [...counts.values()]
+  for (let iter = 0; iter < RARE_MAX_ITER; iter++) {
+    // 找離調色盤最遠的像素色（以像素數加權決勝之外，先取最遠者）
+    let worst: Rgb | null = null, worstD = RARE_DIST
+    for (const { c } of distinct) {
+      let d = Infinity
+      for (const p of palette) d = Math.min(d, dist(p, c))
+      if (d > worstD) { worstD = d; worst = c }
+    }
+    if (!worst) return
+    // 每個調色盤色目前代表多少像素
+    const weight = palette.map(() => 0)
+    for (const { c, n } of distinct) weight[nearest(palette, c)]! += n
+    let bi = 0, bj = 1, bd = Infinity
+    for (let i = 0; i < palette.length; i++) {
+      for (let j = i + 1; j < palette.length; j++) {
+        const d = dist(palette[i]!, palette[j]!)
+        if (d < bd) { bd = d; bi = i; bj = j }
+      }
+    }
+    const wi = weight[bi]! || 1, wj = weight[bj]! || 1
+    const merged = [0, 1, 2].map(ch => Math.round((palette[bi]![ch]! * wi + palette[bj]![ch]! * wj) / (wi + wj))) as Rgb
+    palette[bi] = merged
+    palette[bj] = worst
+  }
+}
+
 // 全部圖共用一組 ≤COLORS 色調色盤；只保留實際用到的顏色
 function quantize(images: Map<string, Img>): { palette: number[]; grids: Map<string, string> } {
   const opaque: Rgb[] = []
@@ -153,6 +305,7 @@ function quantize(images: Map<string, Img>): { palette: number[]; grids: Map<str
     }
   }
   const raw = medianCut(opaque, COLORS)
+  protectRare(raw, opaque)
   const index = new Map<string, number[]>()
   const used = new Set<number>()
   for (const [name, img] of images) {
@@ -234,7 +387,9 @@ function main(argv: string[]): number {
       return 1
     }
     sheet.cells.forEach((name, i) => {
-      images.set(name, toSize(cells[i]!))
+      const info = toSize(cells[i]!)
+      images.set(name, info.img)
+      console.log(`  ${name}: ${info.mode} 色塊 ${info.bx.toFixed(2)}×${info.by.toFixed(2)}，格線分數 ${info.scoreX.toFixed(2)}/${info.scoreY.toFixed(2)}`)
       if (sheet.spoiler) spoilerNames.add(name)
     })
   }
