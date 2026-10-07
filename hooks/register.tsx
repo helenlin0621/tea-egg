@@ -1,10 +1,14 @@
-import type { EngineInterface, Register } from 'claude-code'
+import { update, type EngineInterface, type Register } from 'claude-code'
 import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTime } from './clock'
 import { observe, OBSERVED_TOOLS } from './detect'
-import { onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
+import { dexTitle, onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
 import { STORE_KEY } from './model'
+import { dexArt, eggArt, panelLines, type Art } from './panel'
+import { dexText } from './rules'
+import { decodeSpoilers } from './spoilers'
 import { mutate, type StoreIo } from './store'
 import { TEXT } from './text'
+import { RASTER_ROWS, SIZE } from './pixels'
 import { bandSegments, fitSegments } from './view'
 
 // state 參照的 plugin / key 必須是字面值，且寫在使用 $.state 的這個檔案裡
@@ -104,6 +108,57 @@ export const register: Register = on => {
       )
     } catch {
       return next(e)
+    }
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    try {
+      const save = (await $.state.get(SAVE_REF)).value
+      const showDex = (await $.state.get(SHOW_DEX_REF)).value === true
+      if (!save) return <Text dimColor>蛋還在路上…</Text>
+      const now = await $.clock.now()
+      const t = localNow(now)
+      const columns = e.props.bodyColumns ?? e.viewport?.columns ?? SIZE
+      // terminal 才有 Raster，其餘 surface 才有 Svg
+      const draw = (art: Art | null, key: string) => {
+        if (art === null) return null
+        if (art.kind === 'raster' && e.surface === 'terminal') {
+          const { Raster } = $.ui.resolve(e)
+          return <Raster key={key} columns={SIZE} rows={RASTER_ROWS} cells={art.cells} />
+        }
+        if (art.kind === 'svg' && e.surface !== 'terminal') {
+          const { Svg } = $.ui.resolve(e)
+          return <Svg source={art.source} alt="茶葉蛋" />
+        }
+        return art.kind === 'ascii' ? (
+          <Box key={key} flexDirection="column">{art.lines.map((l, i) => <Text key={String(i)}>{l}</Text>)}</Box>
+        ) : null
+      }
+      const press = (args: string) => async () => {
+        const step = await mutate(ioOf($), (s, at) => onCommand(s, at, localNow(at), args, rng))
+        if (step.reply) $.ui.toast(step.reply)
+      }
+      const slots = decodeSpoilers().dexSlots
+      return (
+        <Box flexDirection="column">
+          {draw(eggArt(save, t, now, e.surface, columns), 'egg')}
+          {panelLines(save, t, now).map((line, i) => <Text key={String(i)}>{line}</Text>)}
+          <Box>
+            <Button key="refill" label="加滷汁" onPress={press('refill')} />
+            <Button key="flip" label="翻面" onPress={press('flip')} />
+            <Button key="dex" label="圖鑑" onPress={() => update($, SHOW_DEX_REF, v => !v)} />
+          </Box>
+          {showDex && <Text>{dexText(save, dexTitle(t))}</Text>}
+          {showDex && (
+            <Box flexWrap="wrap">
+              {slots.map(id => draw(dexArt(id, (save.dex[id] ?? 0) > 0, e.surface), `dex-${id}`))}
+            </Box>
+          )}
+        </Box>
+      )
+    } catch {
+      return <Text dimColor>蛋暫時聯絡不上 🥚</Text>
     }
   })
 
