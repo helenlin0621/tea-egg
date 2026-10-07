@@ -3,7 +3,7 @@ import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTim
 import { observe, OBSERVED_TOOLS } from './detect'
 import { dexTitle, onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
 import { FAKE_STORE_KEY, STORE_KEY } from './model'
-import { dexArt, eggArt, panelLines, type Art } from './panel'
+import { dexArt, eggArt, panelLines, SVG_PX, type Art } from './panel'
 import { dexText } from './rules'
 import { decodeSpoilers } from './spoilers'
 import { mutate, type StoreIo } from './store'
@@ -168,7 +168,7 @@ export const register: Register = on => {
         }
         if (art.kind === 'svg' && e.surface !== 'terminal') {
           const { Svg } = $.ui.resolve(e)
-          return <Svg key={key} source={art.source} alt="茶葉蛋" />
+          return <Svg key={key} source={art.source} alt="茶葉蛋" width={SVG_PX} height={SVG_PX} />
         }
         return art.kind === 'ascii' ? (
           <Box key={key} flexDirection="column">{art.lines.map((l, i) => <Text key={String(i)}>{l}</Text>)}</Box>

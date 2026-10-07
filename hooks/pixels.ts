@@ -54,8 +54,9 @@ export function rasterCells(pixels: string, palette: readonly number[]): string 
 
 const hex = (n: number) => '#' + n.toString(16).padStart(6, '0')
 
-export function svgSource(pixels: string, palette: readonly number[], scale: number): string {
-  const rects: string[] = []
+// background：在像素底下墊一張圓角底色卡（讓白色蒸氣在淺色主題也看得見）
+export function svgSource(pixels: string, palette: readonly number[], scale: number, background?: string): string {
+  const rects: string[] = background ? [`<rect width="${SIZE}" height="${SIZE}" rx="3" fill="${background}"/>`] : []
   for (let y = 0; y < SIZE; y++) {
     let x = 0
     while (x < SIZE) {

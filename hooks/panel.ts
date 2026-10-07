@@ -5,7 +5,11 @@ import { decodeSpoilers } from './spoilers'
 import { FACE_BOX, PALETTE, SPRITES } from './sprites'
 import { FACE_TEXT, STAGE_NAME, bar, faceOf, hintOf, stageOf, strWidth } from './view'
 
-const SVG_SCALE = 5
+// 像素圖放越大越顯得粗，3 倍（144px）看起來最精緻
+const SVG_SCALE = 3
+export const SVG_PX = SIZE * SVG_SCALE
+// 深褐底色卡：白色蒸氣在淺色主題下才看得見
+const SVG_BACKGROUND = '#3b2f2a'
 
 export const ASCII_EGG: readonly string[][] = [
   ['  .-""-.  ', ' /      \\ ', '|  FACE  |', ' \\      / ', "  '-..-'  "],
@@ -31,7 +35,7 @@ export function eggLayers(s: Save, t: LocalTime, now: number): Layer[] {
 function artOf(pixels: string, surface: string): Art {
   return surface === 'terminal'
     ? { kind: 'raster', cells: rasterCells(pixels, PALETTE) }
-    : { kind: 'svg', source: svgSource(pixels, PALETTE, SVG_SCALE) }
+    : { kind: 'svg', source: svgSource(pixels, PALETTE, SVG_SCALE, SVG_BACKGROUND) }
 }
 
 const FACE_COLS = 4
