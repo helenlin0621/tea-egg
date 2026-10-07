@@ -1,0 +1,13 @@
+# 設計文件與劇透原始資料：絕不進 repo（一旦 commit 過，歷史裡就刪不掉）
+tea-egg-design.md
+spoilers.source.json
+art-source/
+art-build/
+
+# 實作計畫含劇透細節，只留本機
+docs/superpowers/
+
+# 雜項
+.claude-plugin/types/
+__pycache__/
+*.pyc
