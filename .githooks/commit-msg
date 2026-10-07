@@ -1,2 +1,2 @@
 #!/bin/sh
-exec py scripts/check_repo.py --msg "$1"
+exec node --disable-warning=ExperimentalWarning scripts/check-repo.ts --msg "$1"

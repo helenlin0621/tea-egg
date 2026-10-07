@@ -11,3 +11,4 @@ docs/superpowers/
 .claude-plugin/types/
 __pycache__/
 *.pyc
+node_modules/

@@ -1,0 +1,22 @@
+{
+  "name": "tea-egg-dev",
+  "private": true,
+  "type": "module",
+  "description": "茶葉蛋養成計畫的開發用腳本（Mod 本身不需要 Node）",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "check": "node --disable-warning=ExperimentalWarning scripts/check-repo.ts",
+    "encode": "node --disable-warning=ExperimentalWarning scripts/encode-spoilers.ts",
+    "sprites": "node --disable-warning=ExperimentalWarning scripts/build-sprites.ts",
+    "test-sheet": "node --disable-warning=ExperimentalWarning scripts/make-test-sheet.ts",
+    "typecheck": "tsc -p scripts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/pngjs": "^6.0.5",
+    "pngjs": "^7.0.0",
+    "typescript": "^7.0.2"
+  }
+}

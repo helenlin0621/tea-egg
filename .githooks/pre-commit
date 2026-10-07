@@ -1,2 +1,2 @@
 #!/bin/sh
-exec py scripts/check_repo.py --staged
+exec node --disable-warning=ExperimentalWarning scripts/check-repo.ts --staged
