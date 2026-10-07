@@ -36,8 +36,9 @@ export function stageOf(progress: number): 0 | 1 | 2 | 3 {
   return 3
 }
 
-export const STAGE_COLOR = ['#f2efe6', '#f2efe6', '#c49a6c', '#7a4a26'] as const
-export const STAGE_NAME = ['生蛋', '裂紋', '入味', '深褐'] as const
+// 與像素圖一致：40–69% 淺杏色、70% 以上淺褐色
+export const STAGE_COLOR = ['#f2efe6', '#f2efe6', '#f0c9a2', '#c98f5c'] as const
+export const STAGE_NAME = ['生蛋', '裂紋', '入味', '滷透'] as const
 
 function charWidth(cp: number): number {
   if ((cp >= 0x0300 && cp <= 0x036f) || cp === 0xfe0f || cp === 0x200d) return 0

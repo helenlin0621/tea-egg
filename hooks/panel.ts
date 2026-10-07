@@ -94,8 +94,8 @@ export const PREVIEW_KEYS = [
 export const PREVIEW_LABELS: Record<string, string> = {
   stage0: '入味 0–19%（生蛋）',
   stage1: '入味 20–39%（裂紋）',
-  stage2: '入味 40–69%（淺褐）',
-  stage3: '入味 70% 以上（深褐）',
+  stage2: '入味 40–69%（淺杏）',
+  stage3: '入味 70% 以上（淺褐）',
   face_happy: '表情：開心',
   face_normal: '表情：普通',
   face_bored: '表情：無聊',
