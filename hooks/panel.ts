@@ -85,6 +85,50 @@ export function eggArt(s: Save, t: LocalTime, now: number, surface: string, colu
   return artOf(compose(layers), surface)
 }
 
+// 開發用預覽：依序檢視每張公開圖，不讀也不改存檔
+export const PREVIEW_KEYS = [
+  'stage0', 'stage1', 'stage2', 'stage3',
+  'face_happy', 'face_normal', 'face_bored', 'face_dry', 'face_sleep', 'face_flip', 'face_done',
+] as const
+
+export const PREVIEW_LABELS: Record<string, string> = {
+  stage0: '入味 0–19%（生蛋）',
+  stage1: '入味 20–39%（裂紋）',
+  stage2: '入味 40–69%（淺褐）',
+  stage3: '入味 70% 以上（深褐）',
+  face_happy: '表情：開心',
+  face_normal: '表情：普通',
+  face_bored: '表情：無聊',
+  face_dry: '表情：滷汁乾了',
+  face_sleep: '表情：睡覺',
+  face_flip: '表情：想翻身',
+  face_done: '表情：剛出鍋',
+}
+
+// 依指令參數決定要預覽哪張：空白＝下一張、數字＝第幾張（從 1 起）、或直接給圖名；off＝結束
+export function nextPreview(current: string | null, arg: string): string | null | undefined {
+  const a = arg.trim()
+  if (a === 'off') return null
+  if (a === '') {
+    const i = current === null ? -1 : PREVIEW_KEYS.indexOf(current as (typeof PREVIEW_KEYS)[number])
+    return PREVIEW_KEYS[(i + 1) % PREVIEW_KEYS.length]
+  }
+  const n = Number(a)
+  if (Number.isInteger(n) && n >= 1 && n <= PREVIEW_KEYS.length) return PREVIEW_KEYS[n - 1]
+  return (PREVIEW_KEYS as readonly string[]).includes(a) ? a : undefined
+}
+
+export function previewArt(key: string, surface: string, columns: number): Art | null {
+  if (surface !== 'terminal') {
+    const hd = hdArt(SPRITES_HD[key])
+    if (hd) return hd
+  } else if (columns < SIZE) {
+    return null
+  }
+  const pixels = SPRITES[key]
+  return pixels ? artOf(pixels, surface) : null
+}
+
 // 圖鑑圖（C/D 組素材）還沒做：取不到就回 null，圖鑑只顯示文字
 export function dexArt(id: string, owned: boolean, surface: string): Art | null {
   const pixels = owned ? decodeSpoilers().sprites[id] : SPRITES.locked

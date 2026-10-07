@@ -3,7 +3,7 @@ import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTim
 import { observe, OBSERVED_TOOLS } from './detect'
 import { dexTitle, onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
 import { FAKE_STORE_KEY, STORE_KEY } from './model'
-import { dexArt, eggArt, panelLines, SVG_PX, type Art } from './panel'
+import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, previewArt, SVG_PX, type Art } from './panel'
 import { dexText } from './rules'
 import { decodeSpoilers } from './spoilers'
 import { mutate, type StoreIo } from './store'
@@ -15,6 +15,7 @@ import { bandSegments, fitSegments } from './view'
 const SAVE_REF = { plugin: 'tea-egg', key: 'save' } as const
 const SHOW_DEX_REF = { plugin: 'tea-egg', key: 'showDex' } as const
 const COUNTED_REF = { plugin: 'tea-egg', key: 'sessionCounted' } as const
+const PREVIEW_REF = { plugin: 'tea-egg', key: 'preview' } as const
 
 export const PANE = 'tea-egg'
 const TICK_MS = 60_000
@@ -183,9 +184,16 @@ export const register: Register = on => {
         }
       }
       const slots = decodeSpoilers().dexSlots
+      const preview = (await $.state.get(PREVIEW_REF)).value ?? null
+      const art = preview !== null ? previewArt(preview, e.surface, columns) : eggArt(save, t, now, e.surface, columns)
       return (
         <Box flexDirection="column">
-          {draw(eggArt(save, t, now, e.surface, columns), 'egg')}
+          {preview !== null && (
+            <Text key="preview" dimColor>
+              預覽 {PREVIEW_KEYS.indexOf(preview as (typeof PREVIEW_KEYS)[number]) + 1}/{PREVIEW_KEYS.length}：{PREVIEW_LABELS[preview] ?? preview}（不影響存檔）
+            </Text>
+          )}
+          {draw(art, 'egg')}
           {panelLines(save, t, now).map((line, i) => <Text key={String(i)}>{line}</Text>)}
           <Box>
             <Button key="refill" label="加滷汁" onPress={press('refill')} />
@@ -218,6 +226,17 @@ export const register: Register = on => {
         }
         await $.ui.open({ id: PANE, title: '茶葉蛋養成計畫' })
         return { text: TEXT.paneOpened }
+      }
+      // 開發用預覽：只切換顯示的圖，不讀也不改存檔
+      if (args === 'preview' || args.startsWith('preview ')) {
+        const current = (await $.state.get(PREVIEW_REF)).value ?? null
+        const chosen = nextPreview(current, args.slice('preview'.length))
+        if (chosen === undefined) return { text: `用法：/egg preview [1-${PREVIEW_KEYS.length}|off]` }
+        await $.state.set(PREVIEW_REF, chosen)
+        if (chosen === null) return { text: '已結束預覽' }
+        if (!(await $.ui.panes()).some(p => p.id === PANE)) await $.ui.open({ id: PANE, title: '茶葉蛋養成計畫' })
+        const n = PREVIEW_KEYS.indexOf(chosen as (typeof PREVIEW_KEYS)[number]) + 1
+        return { text: `預覽 ${n}/${PREVIEW_KEYS.length}：${PREVIEW_LABELS[chosen]}（/egg preview 下一張、/egg preview off 結束）` }
       }
       const step = await mutate(ioOf($), (s, at) => onCommand(s, at, localNow(at), args, rng))
       return { text: step.reply ?? '' }
