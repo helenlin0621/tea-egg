@@ -23,6 +23,15 @@ test('同一個 session 重新載入時不重複計算 session 次數', async ()
   expect(b.egg.record.activeDays).toEqual(['2026-10-07'])
 })
 
+test('開啟 session 時重設活動區間', async () => {
+  const s = newSave(1)
+  s.clocks.bucketStart = 1
+  s.clocks.bucketActive = true
+  const r = onSessionOpen(s, 5_000_000, at('2026-10-07'), true).save
+  expect(r.clocks.bucketStart).toBe(5_000_000)
+  expect(r.clocks.bucketActive).toBe(false)
+})
+
 test('turn 讓入味到 100 時出鍋', async () => {
   const s = newSave(ms('2026-10-07'))
   s.egg.progress = 99

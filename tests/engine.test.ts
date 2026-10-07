@@ -1,6 +1,8 @@
 import { test, expect } from 'claude-code/testing'
 import { RULES, flip, refill, testObserved, tick, toolFailed, turnDone, pauseClocks } from '../hooks/engine'
 import { newSave } from '../hooks/model'
+import { outcome } from '../hooks/rules'
+import { decodeSpoilers } from '../hooks/spoilers'
 import { at, ms } from './helpers'
 
 const MIN = 60_000
@@ -124,7 +126,30 @@ test('活躍日與最大間隔', async () => {
   s = turnDone(s, ms('2026-10-04'), at('2026-10-04'), never).save
   s = turnDone(s, ms('2026-10-05'), at('2026-10-05'), never).save
   expect(s.egg.record.activeDays).toEqual(['2026-10-01', '2026-10-04', '2026-10-05'])
-  expect(s.egg.record.maxGapDays).toBe(3)
+  expect(s.egg.record.maxGapDays).toBe(2) // 10-02、10-03 沒開
+})
+
+test('間隔天數只算中間沒開的天數：相鄰日為 0', async () => {
+  let s = newSave(ms('2026-10-01'))
+  s = turnDone(s, ms('2026-10-01'), at('2026-10-01'), never).save
+  s = turnDone(s, ms('2026-10-02'), at('2026-10-02'), never).save
+  expect(s.egg.record.maxGapDays).toBe(0)
+})
+
+test('週末不開不算長間隔，多空一天才算', async () => {
+  const rule = decodeSpoilers().rules.find(r => r.when === 'gapAtLeast')!
+  const after = (next: string) => {
+    let s = newSave(ms('2026-10-09')) // 週五
+    s = turnDone(s, ms('2026-10-09'), at('2026-10-09'), never).save
+    s = turnDone(s, ms(next), at(next), never).save
+    return s.egg
+  }
+  const monday = after('2026-10-12')
+  expect(monday.record.maxGapDays).toBe(2)
+  expect(outcome(monday, ms('2026-10-12'), never)).not.toBe(rule.egg)
+  const tuesday = after('2026-10-13')
+  expect(tuesday.record.maxGapDays).toBe(3)
+  expect(outcome(tuesday, ms('2026-10-13'), never)).toBe(rule.egg)
 })
 
 test('暫停時只推進時鐘，蛋不變', async () => {

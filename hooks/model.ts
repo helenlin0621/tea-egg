@@ -1,6 +1,8 @@
 import type { Egg, EggRecord, Save } from '../types'
 
 export const STORE_KEY = 'tea-egg/v1'
+// TEA_EGG_FAKE_DATE 有效時改用這份存檔，測試用的假日期不污染真實的蛋
+export const FAKE_STORE_KEY = 'tea-egg/v1-fake'
 export const DEFAULT_NAME = '小蛋'
 
 export function newRecord(now: number): EggRecord {

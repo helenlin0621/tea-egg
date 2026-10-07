@@ -1,5 +1,6 @@
 import { test, expect, mock } from 'claude-code/testing'
 import { decodeSpoilers } from '../hooks/spoilers'
+import { STORE_KEY, newSave } from '../hooks/model'
 
 const START = { cwd: '.', surface: 'terminal', isInteractive: true } as const
 // 外掛底下沒有核心：測試要自己回答被接線的事件
@@ -75,6 +76,47 @@ test('重新觸發 session.start 不重複計算 session', OPTS, async ($, on) =
   await $.session.start(START)
   await $.session.start(START)
   expect((await saved($)).egg.record.sessionCount).toBe(1)
+})
+
+test('非互動 session 不參與', OPTS, async ($, on) => {
+  mock.store(on)
+  mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
+  mock.env(on, {})
+  base(on)
+  on('tool.call', { tool: 'Bash' }, () => BASH_OK)
+  await $.session.start({ cwd: '.', surface: null, isInteractive: false })
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  const ran = await $.tool.call({ tool: 'Bash', command: 'git reset --hard' })
+  expect((ran.result as { stdout: string }).stdout).toBe('ok')
+  const value = await saved($)
+  expect(value?.egg.progress ?? 0).toBe(0)
+  expect(value?.egg.record.sessionCount ?? 0).toBe(0)
+  expect(value?.egg.no ?? 1).toBe(1)
+})
+
+test('假日期不動到真實存檔', OPTS, async ($, on) => {
+  const real = newSave(Date.UTC(2026, 9, 7, 2))
+  real.egg.progress = 42
+  mock.store(on, { [STORE_KEY]: real })
+  mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
+  const dm = decodeSpoilers().dateMode
+  mock.env(on, { TEA_EGG_FAKE_DATE: `2026-${String((dm.month % 12) + 1).padStart(2, '0')}-15` }) // 不是特殊日期
+  base(on)
+  await $.session.start(START)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect((await saved($)).egg.progress).toBe(1) // 從另一份存檔開始，不是 43
+})
+
+test('沒有假日期時讀寫真實存檔', OPTS, async ($, on) => {
+  const real = newSave(Date.UTC(2026, 9, 7, 2))
+  real.egg.progress = 42
+  mock.store(on, { [STORE_KEY]: real })
+  mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
+  mock.env(on, {})
+  base(on)
+  await $.session.start(START)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect((await saved($)).egg.progress).toBe(43)
 })
 
 test('/egg 子指令有回覆', OPTS, async ($, on) => {

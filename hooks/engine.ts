@@ -43,7 +43,8 @@ export function addActiveDay(s: Save, t: LocalTime): void {
   const days = s.egg.record.activeDays
   if (days.includes(t.date)) return
   const last = days[days.length - 1]
-  if (last !== undefined) s.egg.record.maxGapDays = Math.max(s.egg.record.maxGapDays, daysBetween(last, t.date))
+  // 間隔 = 兩個活躍日之間沒開的天數（相鄰兩天 = 0）
+  if (last !== undefined) s.egg.record.maxGapDays = Math.max(s.egg.record.maxGapDays, daysBetween(last, t.date) - 1)
   days.push(t.date)
 }
 

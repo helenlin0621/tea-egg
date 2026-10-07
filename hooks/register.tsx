@@ -2,7 +2,7 @@ import { update, type EngineInterface, type Register } from 'claude-code'
 import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTime } from './clock'
 import { observe, OBSERVED_TOOLS } from './detect'
 import { dexTitle, onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
-import { STORE_KEY } from './model'
+import { FAKE_STORE_KEY, STORE_KEY } from './model'
 import { dexArt, eggArt, panelLines, type Art } from './panel'
 import { dexText } from './rules'
 import { decodeSpoilers } from './spoilers'
@@ -22,6 +22,10 @@ const rng = Math.random
 
 let clock: ClockConfig = { offsetMinutes: systemOffset, fake: null, loadedAt: 0 }
 export const localNow = (now: number): LocalTime => localTime(now, clock)
+// 非互動 session（claude -p、SDK、排程）沒有人在看，整個 session 不參與養蛋
+let interactive = true
+// 假日期生效時讀寫另一份存檔
+const storeKey = () => (clock.fake ? FAKE_STORE_KEY : STORE_KEY)
 
 function commandOf(e: { tool: string }): string {
   const command = (e as { command?: unknown }).command
@@ -31,9 +35,9 @@ function commandOf(e: { tool: string }): string {
 // 載入器不跟隨 $ 跨 import：所有 $.xxx 呼叫都寫在這個檔案裡
 const ioOf = ($: EngineInterface): StoreIo => ({
   now: () => $.clock.now(),
-  read: () => $.store.get(STORE_KEY),
+  read: () => $.store.get(storeKey()),
   write: async save => {
-    await $.store.set(STORE_KEY, save)
+    await $.store.set(storeKey(), save)
     await $.state.set(SAVE_REF, save)
   },
   toast: text => {
@@ -44,13 +48,15 @@ const ioOf = ($: EngineInterface): StoreIo => ({
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     try {
+      interactive = e.isInteractive !== false
+      await $.command.register({ name: 'egg', description: '茶葉蛋養成計畫：/egg [refill|flip|dex|name 名字|help]' })
+      if (!interactive) return next(e)
       const now = await $.clock.now()
       clock = {
         offsetMinutes: systemOffset,
         fake: parseFakeDate(await $.env.get('TEA_EGG_FAKE_DATE')),
         loadedAt: now,
       }
-      await $.command.register({ name: 'egg', description: '茶葉蛋養成計畫：/egg [refill|flip|dex|name 名字|help]' })
       const counted = (await $.state.get(COUNTED_REF)).value === true
       await mutate(ioOf($), (s, at) => onSessionOpen(s, at, localNow(at), !counted))
       if (!counted) await $.state.set(COUNTED_REF, true)
@@ -66,7 +72,7 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const ran = await next(e)
     try {
-      if (e.agentId === undefined && e.reason !== 'error') {
+      if (interactive && e.agentId === undefined && e.reason !== 'error') {
         await mutate(ioOf($), (s, at) => onTurn(s, at, localNow(at), rng))
       }
     } catch {
@@ -79,6 +85,7 @@ export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
     try {
+      if (!interactive) return ran
       const tool = String(e.tool)
       const command = (OBSERVED_TOOLS as readonly string[]).includes(tool) ? commandOf(e) : ''
       const obs = observe(tool, command, ran)
@@ -168,6 +175,8 @@ export const register: Register = on => {
 
   on('command.run', { command: 'egg' }, async ($, e) => {
     try {
+      // 非互動 session 只回說明，不動存檔
+      if (!interactive) return { text: TEXT.help }
       const args = e.args.trim()
       if (args === '') {
         const isOpen = (await $.ui.panes()).some(p => p.id === PANE)

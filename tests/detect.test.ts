@@ -71,6 +71,37 @@ test('Windows 測試指令形式', async () => {
   expect(isTestCommand('gradlew.bat test')).toBe(true)
 })
 
+test('SQL 關鍵字只在 SQL 客戶端裡才算', async () => {
+  expect(dangerKeyword('grep -rn "DROP TABLE" migrations/')).toBe(null)
+  expect(dangerKeyword('git commit -m "never drop table again"')).toBe(null)
+  expect(dangerKeyword('Select-String -Pattern "DROP TABLE"')).toBe(null)
+  expect(dangerKeyword('echo "TRUNCATE logs" > note.txt')).toBe(null)
+  expect(dangerKeyword('PSQL -c "DROP TABLE users"')).toBe('DROP TABLE')
+  expect(dangerKeyword('cd db && sqlcmd -Q "DROP DATABASE app"')).toBe('DROP DATABASE')
+  expect(dangerKeyword('Invoke-Sqlcmd -Query "drop table t"')).toBe('DROP TABLE')
+  expect(dangerKeyword('duckdb a.db "truncate table logs"')).toBe('TRUNCATE')
+})
+
+test('heredoc 內文不算指令', async () => {
+  expect(dangerKeyword("cat > clean.sh <<'EOF'\nrm -rf build\nEOF")).toBe(null)
+  expect(dangerKeyword('cat > clean.sh <<-EOF\nrm -rf build\nEOF\nls')).toBe(null)
+  expect(dangerKeyword("cat > x.sh <<'EOF'\necho hi\nEOF\nrm -rf build")).toBe('rm -rf')
+  expect(isTestCommand('cat > run.sh <<EOF\nnpm test\nEOF')).toBe(false)
+})
+
+test('測試執行器必須是指令字', async () => {
+  for (const cmd of ['npm i -D jest', 'pip install pytest', 'grep -r pytest .', 'ls jest']) {
+    expect(isTestCommand(cmd)).toBe(false)
+  }
+  expect(isTestCommand('cd web && jest')).toBe(true)
+  expect(isTestCommand('sudo pytest')).toBe(true)
+  expect(isTestCommand('python3 -m pytest -q')).toBe(true)
+})
+
+test('被拒絕或失敗的呼叫不算危險', async () => {
+  expect(observe('Bash', 'git reset --hard', { isError: true })).toEqual({ failed: true, test: null, danger: null })
+})
+
 test('observe 呼叫中含危險指令與非 Shell 工具', async () => {
   expect(observe('Bash', 'rm -rf x', {})).toEqual({ failed: false, test: null, danger: 'rm -rf' })
   expect(observe('PowerShell', 'git reset --hard', {})).toEqual({ failed: false, test: null, danger: 'git reset --hard' })

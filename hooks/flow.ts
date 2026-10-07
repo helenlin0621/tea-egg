@@ -27,6 +27,8 @@ export function onSessionOpen(prev: Save, now: number, t: LocalTime, isNewSessio
     step.effects.push({ kind: 'toast', text: TEXT.welcome })
   }
   save.clocks.lastTickAt = now // 關閉期間不追溯
+  save.clocks.bucketStart = now
+  save.clocks.bucketActive = false
   const made = then(step, s => specialMakeup(s, t))
   if (isSpecialDay(t)) return then(made, s => specialSeen(s, t))
   if (isNewSession) {

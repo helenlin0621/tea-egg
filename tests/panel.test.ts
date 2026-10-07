@@ -42,6 +42,30 @@ test('面板文字包含名字、數值條與提示', async () => {
   expect(lines.includes('滷汁快乾了')).toBe(true)
 })
 
+test('ASCII 退路：每種表情放進外框後每列等寬', async () => {
+  const t = at('2026-10-07', 14)
+  const cases: ((s: ReturnType<typeof newSave>) => [number, ReturnType<typeof at>])[] = [
+    s => { s.egg.mood = 90; return [NOW, t] }, // happy
+    s => { s.egg.mood = 50; return [NOW, t] }, // normal
+    s => { s.egg.mood = 10; return [NOW, t] }, // bored
+    s => { s.egg.broth = 0; return [NOW, t] }, // dry
+    () => [ms('2026-10-08', 2), at('2026-10-08', 2)], // sleep
+    s => { s.egg.flipWantedAt = NOW; return [NOW, t] }, // flip
+    s => { s.harvestedAt = NOW; return [NOW, t] }, // done
+  ]
+  for (const make of cases) {
+    for (const progress of [0, 30, 50, 90]) {
+      const s = newSave(NOW)
+      s.egg.progress = progress
+      const [now, lt] = make(s)
+      const art = eggArt(s, lt, now, 'terminal', 10)
+      if (art.kind !== 'ascii') throw new Error('expected ascii')
+      const box = art.lines.slice(0, 5)
+      expect(new Set(box.map(strWidth)).size).toBe(1)
+    }
+  }
+})
+
 test('ASCII 蛋：各階段每列等寬，且保留反斜線邊緣', async () => {
   for (const stage of ASCII_EGG) {
     expect(new Set(stage.map(strWidth)).size).toBe(1)

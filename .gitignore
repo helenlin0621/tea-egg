@@ -6,6 +6,7 @@ art-build/
 
 # 實作計畫含劇透細節，只留本機
 docs/superpowers/
+.superpowers/
 
 # 雜項
 .claude-plugin/types/

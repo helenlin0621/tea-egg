@@ -3,7 +3,7 @@ import type { LocalTime } from './clock'
 import { compose, rasterCells, svgSource, SIZE, type Layer } from './pixels'
 import { decodeSpoilers } from './spoilers'
 import { FACE_BOX, PALETTE, SPRITES } from './sprites'
-import { FACE_TEXT, STAGE_NAME, bar, faceOf, hintOf, stageOf } from './view'
+import { FACE_TEXT, STAGE_NAME, bar, faceOf, hintOf, stageOf, strWidth } from './view'
 
 const SVG_SCALE = 5
 
@@ -34,13 +34,25 @@ function artOf(pixels: string, surface: string): Art {
     : { kind: 'svg', source: svgSource(pixels, PALETTE, SVG_SCALE) }
 }
 
+const FACE_COLS = 4
+
+// 依顯示寬度截斷再補空白（全形字佔 2 格、組合字元佔 0 格）
+function fitWidth(text: string, cols: number): string {
+  let out = ''
+  for (const ch of text) {
+    if (strWidth(out + ch) > cols) break
+    out += ch
+  }
+  return out + ' '.repeat(cols - strWidth(out))
+}
+
 export function eggArt(s: Save, t: LocalTime, now: number, surface: string, columns: number): Art {
   const layers = eggLayers(s, t, now)
   const tooNarrow = surface === 'terminal' && columns < SIZE
   if (layers.length === 0 || tooNarrow) {
     const stage = stageOf(s.egg.progress)
     // 外框裡只放 4 格寬的臉（去掉括號），維持對齊
-    const face = FACE_TEXT[faceOf(s, t, now)].replace(/[()]/g, '').slice(0, 4).padEnd(4)
+    const face = fitWidth(FACE_TEXT[faceOf(s, t, now)].replace(/[()]/g, ''), FACE_COLS)
     return { kind: 'ascii', lines: [...ASCII_EGG[stage]!.map(l => l.replace('FACE', face)), `   ${STAGE_NAME[stage]}`] }
   }
   return artOf(compose(layers), surface)
