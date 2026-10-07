@@ -8,10 +8,10 @@ import { FACE_TEXT, STAGE_NAME, bar, faceOf, hintOf, stageOf } from './view'
 const SVG_SCALE = 5
 
 export const ASCII_EGG: readonly string[][] = [
-  ['  .-""-.  ', ' /      \ ', '|  FACE  |', ' \      / ', "  '-..-'  "],
-  ['  .-""-.  ', ' / ╱    \ ', '|  FACE  |', ' \    ╲ / ', "  '-..-'  "],
-  ['  .-""-.  ', ' /▓╱▓▓▓▓\ ', '|▓ FACE ▓|', ' \▓▓▓╲▓▓/ ', "  '-..-'  "],
-  ['  .-""-.  ', ' /█╱████\ ', '|█ FACE █|', ' \███╲██/ ', "  '-..-'  "],
+  ['  .-""-.  ', ' /      \\ ', '|  FACE  |', ' \\      / ', "  '-..-'  "],
+  ['  .-""-.  ', ' / ╱    \\ ', '|  FACE  |', ' \\    ╲ / ', "  '-..-'  "],
+  ['  .-""-.  ', ' /▓╱▓▓▓▓\\ ', '|▓ FACE ▓|', ' \\▓▓▓╲▓▓/ ', "  '-..-'  "],
+  ['  .-""-.  ', ' /█╱████\\ ', '|█ FACE █|', ' \\███╲██/ ', "  '-..-'  "],
 ]
 
 export type Art = { kind: 'raster'; cells: string } | { kind: 'svg'; source: string } | { kind: 'ascii'; lines: string[] }
@@ -23,6 +23,7 @@ export function eggLayers(s: Save, t: LocalTime, now: number): Layer[] {
   const key = face === 'happy' || face === 'normal' ? `stage${stageOf(s.egg.progress)}` : `face_${face}`
   const base = SPRITES[key]
   const layers: Layer[] = []
+  // FACE_BOX 分支目前用不到，保留給之後的疊圖圖層
   if (base) layers.push(FACE_BOX && key.startsWith('face_') ? { pixels: base, box: FACE_BOX } : { pixels: base })
   return layers
 }

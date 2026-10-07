@@ -111,9 +111,9 @@ export const register: Register = on => {
     }
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
     try {
+      const { Box, Text, Button } = $.ui.resolve(e)
       const save = (await $.state.get(SAVE_REF)).value
       const showDex = (await $.state.get(SHOW_DEX_REF)).value === true
       if (!save) return <Text dimColor>蛋還在路上…</Text>
@@ -129,15 +129,19 @@ export const register: Register = on => {
         }
         if (art.kind === 'svg' && e.surface !== 'terminal') {
           const { Svg } = $.ui.resolve(e)
-          return <Svg source={art.source} alt="茶葉蛋" />
+          return <Svg key={key} source={art.source} alt="茶葉蛋" />
         }
         return art.kind === 'ascii' ? (
           <Box key={key} flexDirection="column">{art.lines.map((l, i) => <Text key={String(i)}>{l}</Text>)}</Box>
         ) : null
       }
       const press = (args: string) => async () => {
-        const step = await mutate(ioOf($), (s, at) => onCommand(s, at, localNow(at), args, rng))
-        if (step.reply) $.ui.toast(step.reply)
+        try {
+          const step = await mutate(ioOf($), (s, at) => onCommand(s, at, localNow(at), args, rng))
+          if (step.reply) $.ui.toast(step.reply)
+        } catch {
+          // 按鈕出錯不影響使用者
+        }
       }
       const slots = decodeSpoilers().dexSlots
       return (
@@ -158,7 +162,7 @@ export const register: Register = on => {
         </Box>
       )
     } catch {
-      return <Text dimColor>蛋暫時聯絡不上 🥚</Text>
+      return next(e)
     }
   })
 

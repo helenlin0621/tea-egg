@@ -1,5 +1,6 @@
 import { test, expect } from 'claude-code/testing'
-import { dexArt, eggArt, eggLayers, panelLines } from '../hooks/panel'
+import { ASCII_EGG, dexArt, eggArt, eggLayers, panelLines } from '../hooks/panel'
+import { strWidth } from '../hooks/view'
 import { newSave } from '../hooks/model'
 import { SPRITES } from '../hooks/sprites'
 import { at, ms } from './helpers'
@@ -39,4 +40,12 @@ test('面板文字包含名字、數值條與提示', async () => {
   expect(lines.includes('滷汁')).toBe(true)
   expect(lines.includes('心情')).toBe(true)
   expect(lines.includes('滷汁快乾了')).toBe(true)
+})
+
+test('ASCII 蛋：各階段每列等寬，且保留反斜線邊緣', async () => {
+  for (const stage of ASCII_EGG) {
+    expect(new Set(stage.map(strWidth)).size).toBe(1)
+  }
+  expect(ASCII_EGG[0]![1]!.includes('\\')).toBe(true)
+  expect(ASCII_EGG[0]![3]!.includes('\\')).toBe(true)
 })
