@@ -158,6 +158,19 @@ function sampleNative(cell: Img, bx: number, ox: number, by: number, oy: number)
       if (!isMagenta(p)) out.data.set([p[0], p[1], p[2], 255], (j * nx + i) * 4)
     }
   }
+  // 去除邊緣的洋紅殘影：偏紫（r、b 都明顯高於 g，且 b > 70）且貼著透明（上下左右）的不透明畫素改成透明。
+  // 藍色 zZ（r 低）與粉紅腮紅（b 沒有明顯高於 g）不受影響。
+  const isClear = (x: number, y: number) => x < 0 || y < 0 || x >= nx || y >= ny || out.data[(y * nx + x) * 4 + 3]! === 0
+  const fringe: number[] = []
+  for (let y = 0; y < ny; y++) {
+    for (let x = 0; x < nx; x++) {
+      const i = (y * nx + x) * 4
+      if (out.data[i + 3]! === 0) continue
+      const r = out.data[i]!, g = out.data[i + 1]!, b = out.data[i + 2]!
+      if (r > g + 40 && b > g + 40 && b > 70 && (isClear(x - 1, y) || isClear(x + 1, y) || isClear(x, y - 1) || isClear(x, y + 1))) fringe.push(i)
+    }
+  }
+  for (const i of fringe) out.data.set([0, 0, 0, 0], i)
   const box = bboxAlpha(out)
   return box ? crop(out, ...box) : null
 }
