@@ -21,7 +21,8 @@ const PREVIEW_SCALE = 4
 type Img = { width: number; height: number; data: Uint8Array } // RGBA
 type Rgba = [number, number, number, number]
 type Rgb = [number, number, number]
-type Sheet = { file: string; cells: string[]; spoiler?: boolean }
+// potAnchor：這張拼圖的格子都有同款鍋子，HD 版以鍋子寬度統一大小
+type Sheet = { file: string; cells: string[]; spoiler?: boolean; potAnchor?: boolean }
 type Manifest = { faceBox?: [number, number, number, number] | null; sheets: Sheet[] }
 
 function pixel(img: Img, x: number, y: number): Rgba {
@@ -436,12 +437,42 @@ function boxScale(src: Img, w: number, h: number): Img {
   return out
 }
 
-function toHd(cell: Img): Img | null {
+// 去背並裁到內容範圍
+function hdBody(cell: Img): Img | null {
   const keyed = softKey(cell)
   const box = bboxAlpha(keyed)
-  if (!box) return null
-  const body = crop(keyed, ...box)
-  const r = Math.min(HD_FIT / body.width, HD_FIT / body.height)
+  return box ? crop(keyed, ...box) : null
+}
+
+// 鍋子寬度：內容下方 35% 範圍內，不透明像素最寬的一列
+const POT_ZONE = 0.35
+function potWidth(body: Img): number {
+  let widest = 0
+  for (let y = Math.floor(body.height * (1 - POT_ZONE)); y < body.height; y++) {
+    let lo = -1, hi = -1
+    for (let x = 0; x < body.width; x++) {
+      if (body.data[(y * body.width + x) * 4 + 3]! > 128) { if (lo < 0) lo = x; hi = x }
+    }
+    if (lo >= 0) widest = Math.max(widest, hi - lo + 1)
+  }
+  return widest || body.width
+}
+
+// 同一組（manifest 標了 potAnchor 的圖）共用「鍋子寬度」：每張縮放成一樣寬的鍋子，
+// 取所有圖都放得進 HD_FIT 的最大鍋寬，避免有 zZ、閃光的圖被縮得比較小
+function anchoredScales(bodies: Map<string, Img>): Map<string, number> {
+  let target = Infinity
+  const pots = new Map<string, number>()
+  for (const [name, b] of bodies) {
+    const p = potWidth(b)
+    pots.set(name, p)
+    target = Math.min(target, (HD_FIT * p) / b.width, (HD_FIT * p) / b.height)
+  }
+  return new Map([...pots].map(([name, p]) => [name, target / p] as const))
+}
+
+function toHd(body: Img, scale?: number): Img {
+  const r = scale ?? Math.min(HD_FIT / body.width, HD_FIT / body.height)
   const w = Math.max(1, Math.round(body.width * r)), h = Math.max(1, Math.round(body.height * r))
   const sprite = boxScale(body, Math.min(w, HD_FIT), Math.min(h, HD_FIT))
   const out = blank(HD_CANVAS, HD_CANVAS, [0, 0, 0, 0])
@@ -499,6 +530,7 @@ function main(argv: string[]): number {
   const images = new Map<string, Img>()
   const spoilerNames = new Set<string>()
   const hd = new Map<string, Img>()
+  const anchored = new Map<string, Img>()
   for (const sheet of manifest.sheets) {
     const png = PNG.sync.read(readFileSync(join(src, sheet.file)))
     const cells = splitSheet({ width: png.width, height: png.height, data: png.data })
@@ -509,12 +541,14 @@ function main(argv: string[]): number {
     sheet.cells.forEach((name, i) => {
       const info = toSize(cells[i]!)
       images.set(name, info.img)
-      const big = toHd(cells[i]!)
-      if (big) hd.set(name, big)
+      const body = hdBody(cells[i]!)
+      if (body && sheet.potAnchor) anchored.set(name, body)
+      else if (body) hd.set(name, toHd(body))
       console.log(`  ${name}: ${info.mode} 色塊 ${info.bx.toFixed(2)}×${info.by.toFixed(2)}，格線分數 ${info.scoreX.toFixed(2)}/${info.scoreY.toFixed(2)}`)
       if (sheet.spoiler) spoilerNames.add(name)
     })
   }
+  for (const [name, scale] of anchoredScales(anchored)) hd.set(name, toHd(anchored.get(name)!, scale))
   const { palette, grids } = quantize(images)
   const pub = new Map([...grids].filter(([n]) => !spoilerNames.has(n)))
   const secret = Object.fromEntries([...grids].filter(([n]) => spoilerNames.has(n)))
