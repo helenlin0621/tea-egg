@@ -11,6 +11,7 @@ export const TEXT = {
   newDex: '（新圖鑑！）',
   refillReply: '滷汁加滿了！蛋看起來很開心 (•ᴗ•)',
   flipReply: '翻好了！入味 +2 (•̀ᴗ•́)↻',
+  flipNoGain: '翻好了！(•̀ᴗ•́)↻',
   flipNotNeeded: '蛋現在躺得很舒服，還不用翻',
   nameReply: '好的，這顆蛋現在叫「{name}」',
   nameUsage: '用法：/egg name <名字>（最多 12 個字）',

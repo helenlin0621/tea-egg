@@ -119,11 +119,11 @@ export function flip(prev: Save, now: number, t: LocalTime): Step {
     step.reply = TEXT.flipNotNeeded
     return step
   }
-  gain(step.save, RULES.flipBonus, t, false)
+  const gained = gain(step.save, RULES.flipBonus, t, false)
   egg.mood = clamp(egg.mood + 15)
   egg.flipWantedAt = null
   egg.activeMinutes = 0
-  step.reply = TEXT.flipReply
+  step.reply = gained > 0 ? TEXT.flipReply : TEXT.flipNoGain
   return step
 }
 

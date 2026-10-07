@@ -134,3 +134,53 @@ test('暫停時只推進時鐘，蛋不變', async () => {
   expect(p.clocks.lastTickAt).toBe(t0 + 60 * MIN)
   expect(p.egg).toEqual(s.egg)
 })
+
+test('加滷汁提升心情：mood 30 → 70（下限），mood 60 → 80（+20），mood 95 → 100（上限）', async () => {
+  const t0 = ms('2026-10-07')
+
+  let s = newSave(t0)
+  s.egg.mood = 30
+  const r1 = refill(s)
+  expect(r1.save.egg.mood).toBe(70)
+
+  s = newSave(t0)
+  s.egg.mood = 60
+  const r2 = refill(s)
+  expect(r2.save.egg.mood).toBe(80)
+
+  s = newSave(t0)
+  s.egg.mood = 95
+  const r3 = refill(s)
+  expect(r3.save.egg.mood).toBe(100)
+})
+
+test('翻面在有效期內提升心情 +15', async () => {
+  const t0 = ms('2026-10-07')
+  let s = newSave(t0)
+  s.egg.mood = 40
+  s.egg.flipWantedAt = t0
+  const r = flip(s, t0 + 10 * MIN, at('2026-10-07'))
+  expect(r.save.egg.mood).toBe(55)
+})
+
+test('翻面超過有效期外不改心情', async () => {
+  const t0 = ms('2026-10-07')
+  let s = newSave(t0)
+  s.egg.mood = 40
+  s.egg.flipWantedAt = t0
+  s = tick(s, t0 + 31 * MIN, at('2026-10-07')).save
+  const r = flip(s, t0 + 32 * MIN, at('2026-10-07'))
+  expect(r.save.egg.mood).toBe(40)
+})
+
+test('翻面滷汁為 0 時無入味但給心情，用 flipNoGain 回覆', async () => {
+  const t0 = ms('2026-10-07')
+  let s = newSave(t0)
+  s.egg.broth = 0
+  s.egg.flipWantedAt = t0
+  s.egg.mood = 40
+  const r = flip(s, t0 + 10 * MIN, at('2026-10-07'))
+  expect(r.save.egg.progress).toBe(0)
+  expect(r.save.egg.mood).toBe(55)
+  expect(r.reply).toBe('翻好了！(•̀ᴗ•́)↻')
+})
