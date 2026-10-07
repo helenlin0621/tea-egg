@@ -20,7 +20,7 @@ const NEVER_TRACK_EXT = ['.png']
 const SKIP_CONTENT = ['hooks/spoilers.ts']
 const SCISSORS = '# ------------------------ >8'
 
-type Guard = { words: string[]; patterns: RegExp[] }
+type Guard = { words: string[]; patterns: RegExp[]; invalid: string[] }
 
 function git(...args: string[]): Buffer {
   return execFileSync('git', args, { cwd: ROOT, maxBuffer: 256 * 1024 * 1024 })
@@ -32,12 +32,18 @@ function gitPaths(...args: string[]): string[] {
 }
 
 function loadGuard(): Guard {
-  if (!existsSync(SOURCE)) return { words: [], patterns: [] }
+  if (!existsSync(SOURCE)) return { words: [], patterns: [], invalid: [] }
   const guard = (JSON.parse(readFileSync(SOURCE, 'utf8')) as { guard?: { words?: string[]; patterns?: string[] } }).guard ?? {}
-  return {
-    words: (guard.words ?? []).map(w => w.toLowerCase()),
-    patterns: (guard.patterns ?? []).map(p => new RegExp(p)),
-  }
+  const patterns: RegExp[] = []
+  const invalid: string[] = []
+  ;(guard.patterns ?? []).forEach((p, i) => {
+    try {
+      patterns.push(new RegExp(p))
+    } catch {
+      invalid.push(`第 ${i + 1} 個 pattern 無效`) // 不印 pattern 本身
+    }
+  })
+  return { words: (guard.words ?? []).map(w => w.toLowerCase()), patterns, invalid }
 }
 
 // 只印出字數，不印字詞本身，避免輸出被貼出去時洩漏
@@ -60,23 +66,26 @@ function isBadPath(path: string): boolean {
 
 function checkFiles(paths: string[], read: (path: string) => Buffer, guard: Guard): string[] {
   const problems: string[] = []
-  for (const path of paths) {
+  paths.forEach((path, i) => {
+    // 檔名本身含禁止字詞時，所有訊息都改用編號，避免把字詞印出來
+    const nameHits = scanText(`第 ${i + 1} 個檔案（檔名）`, path, guard)
+    const label = nameHits.length > 0 ? `第 ${i + 1} 個檔案` : path
+    problems.push(...nameHits)
     if (isBadPath(path)) {
-      problems.push(`${path}: 這個檔案不可進 repo`)
-      continue
+      problems.push(`${label}: 這個檔案不可進 repo`)
+      return
     }
-    problems.push(...scanText(`${path}（檔名）`, path, guard))
-    if (SKIP_CONTENT.includes(path)) continue
+    if (SKIP_CONTENT.includes(path)) return
     let data: Buffer
     try {
       data = read(path)
     } catch {
-      problems.push(`${path}: 無法讀取，請手動確認`)
-      continue
+      problems.push(`${label}: 無法讀取，請手動確認`)
+      return
     }
-    if (data.subarray(0, 4096).includes(0)) continue
-    problems.push(...scanText(path, data.toString('utf8'), guard))
-  }
+    if (data.subarray(0, 4096).includes(0)) return
+    problems.push(...scanText(label, data.toString('utf8'), guard))
+  })
   return problems
 }
 
@@ -107,6 +116,7 @@ function main(argv: string[]): number {
     console.log('用法：npm run check -- --staged | --msg FILE | --all')
     return 2
   }
+  problems.push(...guard.invalid)
   if (guard.words.length === 0) console.log('（提醒：找不到 spoilers.source.json，只檢查了檔名規則）')
   for (const line of problems) console.log('✗', line)
   if (problems.length > 0) {
@@ -117,4 +127,4 @@ function main(argv: string[]): number {
   return 0
 }
 
-process.exit(main(process.argv.slice(2)))
+process.exitCode = main(process.argv.slice(2))
