@@ -94,6 +94,37 @@ test('非互動 session 不參與', OPTS, async ($, on) => {
   expect(value?.egg.no ?? 1).toBe(1)
 })
 
+const HEADLESS = { cwd: '.', surface: null, isInteractive: false } as const
+const ATTACH = { surface: 'desktop', clientId: 'c1' } as const
+
+test('桌面版：start 時無畫面，之後 attach 才啟用', OPTS, async ($, on) => {
+  mock.store(on)
+  mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
+  mock.env(on, {})
+  base(on)
+  on('session.attach', (_, e) => ({ clientId: e.clientId }))
+  await $.session.start(HEADLESS)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't0', reason: 'answer' })
+  expect((await saved($))?.egg?.progress ?? 0).toBe(0)
+  await $.session.attach(ATTACH)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  const value = await saved($)
+  expect(value.egg.progress).toBe(1)
+  expect(value.egg.record.sessionCount).toBe(1)
+})
+
+test('attach 兩次不重複計算 session', OPTS, async ($, on) => {
+  mock.store(on)
+  mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
+  mock.env(on, {})
+  base(on)
+  on('session.attach', (_, e) => ({ clientId: e.clientId }))
+  await $.session.start(HEADLESS)
+  await $.session.attach(ATTACH)
+  await $.session.attach({ surface: 'desktop', clientId: 'c2' })
+  expect((await saved($)).egg.record.sessionCount).toBe(1)
+})
+
 test('假日期不動到真實存檔', OPTS, async ($, on) => {
   const real = newSave(Date.UTC(2026, 9, 7, 2))
   real.egg.progress = 42

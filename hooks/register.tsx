@@ -1,4 +1,4 @@
-import { update, type EngineInterface, type Register } from 'claude-code'
+import { update, type EngineInterface, type Register, type Timer } from 'claude-code'
 import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTime } from './clock'
 import { observe, OBSERVED_TOOLS } from './detect'
 import { dexTitle, onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
@@ -22,8 +22,8 @@ const rng = Math.random
 
 let clock: ClockConfig = { offsetMinutes: systemOffset, fake: null, loadedAt: 0 }
 export const localNow = (now: number): LocalTime => localTime(now, clock)
-// 非互動 session（claude -p、SDK、排程）沒有人在看，整個 session 不參與養蛋
-let interactive = true
+// 沒有人在看的 session（claude -p、SDK 腳本、排程）不參與養蛋；有畫面接上才轉為 true
+let interactive = false
 // 假日期生效時讀寫另一份存檔
 const storeKey = () => (clock.fake ? FAKE_STORE_KEY : STORE_KEY)
 
@@ -45,26 +45,58 @@ const ioOf = ($: EngineInterface): StoreIo => ({
   },
 })
 
+// 每次載入只啟用一次；計時器握柄留著，重新註冊前先取消
+let tick: Timer | null = null
+
+async function activate($: EngineInterface): Promise<void> {
+  // 同步先占位，避免 start 與 attach 同時進來而重複啟用
+  if (interactive) return
+  interactive = true
+  try {
+    const now = await $.clock.now()
+    clock = {
+      offsetMinutes: systemOffset,
+      fake: parseFakeDate(await $.env.get('TEA_EGG_FAKE_DATE')),
+      loadedAt: now,
+    }
+    const counted = (await $.state.get(COUNTED_REF)).value === true
+    await mutate(ioOf($), (s, at) => onSessionOpen(s, at, localNow(at), !counted))
+    if (!counted) await $.state.set(COUNTED_REF, true)
+    tick?.cancel()
+    tick = $.clock.every(TICK_MS, () => {
+      void mutate(ioOf($), (s, at) => onTick(s, at, localNow(at), rng)).catch(() => undefined)
+    })
+  } catch {
+    // 蛋出錯不影響使用者
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     try {
-      interactive = e.isInteractive !== false
       await $.command.register({ name: 'egg', description: '茶葉蛋養成計畫：/egg [refill|flip|dex|name 名字|help]' })
-      if (!interactive) return next(e)
-      const now = await $.clock.now()
-      clock = {
-        offsetMinutes: systemOffset,
-        fake: parseFakeDate(await $.env.get('TEA_EGG_FAKE_DATE')),
-        loadedAt: now,
+      // 有人在看才啟用：互動 session，或已經有畫面接上（桌面版熱重載不會再發 attach）
+      let seen = e.isInteractive === true
+      if (!seen) {
+        try {
+          seen = (await $.session.surfaces()).length > 0
+        } catch {
+          // 查不到就當沒有
+        }
       }
-      const counted = (await $.state.get(COUNTED_REF)).value === true
-      await mutate(ioOf($), (s, at) => onSessionOpen(s, at, localNow(at), !counted))
-      if (!counted) await $.state.set(COUNTED_REF, true)
-      $.clock.every(TICK_MS, () => {
-        void mutate(ioOf($), (s, at) => onTick(s, at, localNow(at), rng)).catch(() => undefined)
-      })
+      if (seen) await activate($)
     } catch {
       // 蛋出錯不影響使用者
+    }
+    return next(e)
+  })
+
+  // 桌面版（SDK host）session.start 時沒有畫面，之後才連上
+  on('session.attach', async ($, e, next) => {
+    try {
+      await activate($)
+    } catch {
+      // 靜默略過
     }
     return next(e)
   })
