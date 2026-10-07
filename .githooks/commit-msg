@@ -1,0 +1,2 @@
+#!/bin/sh
+exec py scripts/check_repo.py --msg "$1"

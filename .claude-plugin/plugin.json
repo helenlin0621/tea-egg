@@ -1,0 +1,6 @@
+{
+  "name": "tea-egg",
+  "version": "0.1.0",
+  "description": "茶葉蛋養成計畫：寫 code 時養一顆慢慢入味的蛋",
+  "types": "./types/index.d.ts"
+}

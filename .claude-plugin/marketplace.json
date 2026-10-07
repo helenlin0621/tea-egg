@@ -1,0 +1,7 @@
+{
+  "name": "tea-egg",
+  "owner": { "name": "helenlin0621" },
+  "plugins": [
+    { "name": "tea-egg", "source": "./", "description": "茶葉蛋養成計畫：寫 code 時養一顆慢慢入味的蛋" }
+  ]
+}
