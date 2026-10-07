@@ -132,6 +132,8 @@ export const register: Register = on => {
   // 輸入框上方的橫條；出錯或有問卷時一律讓路
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     try {
+      // 輸入框被畫出來＝有畫面接著；繪圖中不能寫 state，所以排到下一刻再啟用
+      if (!interactive) $.clock.after(0, () => void activate($))
       if (e.props.hasSurvey) return next(e)
       const save = (await $.state.get(SAVE_REF)).value
       if (!save) return next(e)
@@ -215,7 +217,8 @@ export const register: Register = on => {
 
   on('command.run', { command: 'egg' }, async ($, e) => {
     try {
-      // 非互動 session 只回說明，不動存檔
+      // 有人親手打了 /egg，就代表有人在看（桌面版的 attach 訊號可能早於 Mod 載入而漏掉）
+      if (!interactive && e.origin.kind !== 'plugin') await activate($)
       if (!interactive) return { text: TEXT.help }
       const args = e.args.trim()
       if (args === '') {
