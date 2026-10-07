@@ -23,7 +23,8 @@ type Rgba = [number, number, number, number]
 type Rgb = [number, number, number]
 // potAnchor：這張拼圖的格子都有同款鍋子，HD 版以鍋子寬度統一大小
 type Sheet = { file: string; cells: string[]; spoiler?: boolean; potAnchor?: boolean }
-type Manifest = { faceBox?: [number, number, number, number] | null; sheets: Sheet[] }
+// hdOverride：指定某張的高解析圖直接用這個 144×144 透明 PNG（例如人工修好的圖）
+type Manifest = { faceBox?: [number, number, number, number] | null; sheets: Sheet[]; hdOverride?: Record<string, string> }
 
 function pixel(img: Img, x: number, y: number): Rgba {
   const i = (y * img.width + x) * 4
@@ -549,6 +550,15 @@ function main(argv: string[]): number {
     })
   }
   for (const [name, scale] of anchoredScales(anchored)) hd.set(name, toHd(anchored.get(name)!, scale))
+  for (const [name, file] of Object.entries(manifest.hdOverride ?? {})) {
+    const png = PNG.sync.read(readFileSync(join(src, file)))
+    if (png.width !== HD_CANVAS || png.height !== HD_CANVAS) {
+      console.error(`${file}: 高解析覆蓋圖必須是 ${HD_CANVAS}×${HD_CANVAS}`)
+      return 1
+    }
+    hd.set(name, { width: png.width, height: png.height, data: png.data })
+    console.log(`  ${name}: 高解析圖改用 ${file}`)
+  }
   const { palette, grids } = quantize(images)
   const pub = new Map([...grids].filter(([n]) => !spoilerNames.has(n)))
   const secret = Object.fromEntries([...grids].filter(([n]) => spoilerNames.has(n)))
