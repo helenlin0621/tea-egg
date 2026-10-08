@@ -1,10 +1,10 @@
-// 把 art-source/ 的 PNG 拼圖轉成 48×48、全套共用 ≤32 色的像素資料。
+// Turn the PNG sprite sheets in art-source/ into 48×48 pixel data that all share one palette of ≤32 colors.
 //
-// 輸出：hooks/sprites.ts（非劇透）、art-build/spoiler_sprites.json（劇透，之後由 encode-spoilers.ts 編碼）、
-//       art-build/preview.png（每張放大 4 倍、深灰底排成一列，人工確認用）、
-//       art-build/terminal/<圖名>.png（終端版 48×48 原尺寸、洋紅底，給人工修圖當底稿）
-// 終端版手改圖：art-source/terminal/<圖名>.png（48×48，洋紅 255,0,255 = 透明）存在就直接用它，不從拼圖算
-// 用法：npm run sprites [-- --source 資料夾]
+// Output: hooks/sprites.ts (non-spoiler), art-build/spoiler_sprites.json (spoilers, encoded later by encode-spoilers.ts),
+//         art-build/preview.png (each sprite 4x on dark gray in one row, for manual review),
+//         art-build/terminal/<name>.png (terminal sprites at native 48×48 on magenta, as a base for manual touch-ups)
+// Hand-edited terminal sprites: when art-source/terminal/<name>.png (48×48, magenta 255,0,255 = transparent) exists, it's used as is instead of being computed from the sheet
+// Usage: npm run sprites [-- --source DIR]
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,17 +15,17 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SIZE = 48
 const COLORS = 32
 const SEP_RATIO = 0.97
-const ROW_GAP = 0.04 // 小於圖高 4% 的列分隔間隙要合併
-const COL_GAP = 0.02 // 小於圖寬 2% 的欄分隔間隙要合併
+const ROW_GAP = 0.04 // merge row separator gaps smaller than 4% of the image height
+const COL_GAP = 0.02 // merge column separator gaps smaller than 2% of the image width
 const DIGITS = '0123456789abcdefghijklmnopqrstuv'
 const PREVIEW_SCALE = 4
 
 type Img = { width: number; height: number; data: Uint8Array } // RGBA
 type Rgba = [number, number, number, number]
 type Rgb = [number, number, number]
-// potAnchor：這張拼圖的格子都有同款鍋子，HD 版以鍋子寬度統一大小
+// potAnchor: every cell in this sheet has the same pot; the HD version normalizes size by pot width
 type Sheet = { file: string; cells: string[]; spoiler?: boolean; potAnchor?: boolean }
-// hdOverride：指定某張的高解析圖直接用這個 144×144 透明 PNG（例如人工修好的圖）
+// hdOverride: use this 144×144 transparent PNG directly as a sprite's high-res image (e.g. a hand-fixed one)
 type Manifest = { faceBox?: [number, number, number, number] | null; sheets: Sheet[]; hdOverride?: Record<string, string> }
 
 function pixel(img: Img, x: number, y: number): Rgba {
@@ -33,7 +33,7 @@ function pixel(img: Img, x: number, y: number): Rgba {
   return [img.data[i]!, img.data[i + 1]!, img.data[i + 2]!, img.data[i + 3]!]
 }
 
-// AI 生成的圖在洋紅底的邊緣有抗鋸齒雜邊，所以條件放寬
+// AI-generated images have anti-aliased fringes against the magenta background, so the test is relaxed
 function isMagenta([r, g, b, a]: Rgba): boolean {
   return a < 128 || (r > 150 && b > 150 && g < 120)
 }
@@ -52,7 +52,7 @@ function crop(img: Img, x0: number, y0: number, x1: number, y1: number): Img {
   return out
 }
 
-// 連續為 false（非分隔）的區段 → [start, end)；中間夾的分隔若短於 minGap 就併起來
+// Runs of false (non-separator) → [start, end); separators in between shorter than minGap are merged
 function runs(isSep: boolean[], minGap: number): [number, number][] {
   const raw: [number, number][] = []
   let start = -1
@@ -88,16 +88,16 @@ function splitSheet(img: Img): Img[] {
   return cells
 }
 
-// ---- 對齊原圖格線取樣 ----
-// AI 生成的「像素圖」每個畫素是約 8–24 個真實像素的色塊（大小不完全一致）。
-// 直接最近鄰縮成 48×48 會讓部分畫素佔 1 格、部分佔 2 格而鋸齒。
-// 做法：每個軸各自用「顏色跳變直方圖」找出色塊大小 b 與起點 o，再在每個色塊中心取樣。
-const EDGE_DIFF = 60 // 相鄰像素 |dr|+|dg|+|db| 超過此值算一次顏色跳變
+// ---- Sampling aligned to the source grid ----
+// In AI-generated "pixel art" each pixel is a block of roughly 8–24 real pixels (sizes not perfectly uniform).
+// Plain nearest-neighbor down to 48×48 makes some pixels take 1 cell and others 2, which looks jagged.
+// Approach: per axis, find block size b and offset o from a histogram of color jumps, then sample each block's center.
+const EDGE_DIFF = 60 // adjacent pixels with |dr|+|dg|+|db| above this count as one color jump
 const B_MIN = 8, B_MAX = 24, B_STEP = 0.25, O_STEP = 0.1
-const SMALL_BLOCK_PENALTY = 0.02 // 對小色塊的輕微扣分（避免格線細到什麼都蓋到）
-// 格線分數 = 最佳格線的跳變質量 ÷ 所有候選格線的平均質量（lift）。真實圖約 2.5–3.1。
-// 低於此值（接近 1：隨便切都差不多＝完全沒格線）才退回舊的裁切＋縮放。
-// 注意：make-test-sheet 的合成蛋輪廓是階梯狀，也會擬合出約 2.7 的假格線，所以仍走 grid 路徑（不會崩，只是沒意義）；此門檻只擋真正無結構的圖。
+const SMALL_BLOCK_PENALTY = 0.02 // slight penalty for small blocks (so the grid doesn't get so fine that it covers everything)
+// Grid score = jump mass of the best grid ÷ average mass of all candidate grids (lift). Real images score about 2.5–3.1.
+// Below this (close to 1: any cut is about as good = no grid at all) fall back to the old crop + scale.
+// Note: make-test-sheet's synthetic egg outlines are stair-stepped and also fit a fake grid of about 2.7, so they still take the grid path (harmless, just meaningless); this threshold only stops truly structureless images.
 const GRID_MIN_SCORE = 1.5
 
 function edgeHistogram(cell: Img, axis: 0 | 1): number[] {
@@ -114,7 +114,7 @@ function edgeHistogram(cell: Img, axis: 0 | 1): number[] {
   return e
 }
 
-// fixedB：只找格線偏移，色塊大小固定（同一張拼圖裡某格被誤判時用）
+// fixedB: only search the grid offset, with a fixed block size (for a cell misdetected within a sheet)
 function fitAxis(e: number[], fixedB?: number): { b: number; o: number; score: number } {
   let sum = 0, cnt = 0
   const n = e.length
@@ -132,14 +132,14 @@ function fitAxis(e: number[], fixedB?: number): { b: number; o: number; score: n
       const raw = s / tot
       sum += raw; cnt++
       const score = raw - (SMALL_BLOCK_PENALTY * (n / b)) / 10
-      if (score > bestAdj) { bestAdj = score; best = { b, o, score: raw } } // 以含扣分的分數選最佳；回報未扣分的比例
+      if (score > bestAdj) { bestAdj = score; best = { b, o, score: raw } } // pick the best by penalized score; report the unpenalized ratio
     }
   }
-  // 回報「最佳格線分數 ÷ 所有候選格線的平均分數」：真有格線時遠大於 1，沒格線（隨便切都差不多）時接近 1
+  // Report "best grid score ÷ average score of all candidates": far above 1 with a real grid, close to 1 without one (any cut is about as good)
   return { ...best, score: best.score / (sum / cnt) }
 }
 
-// 裁到非洋紅範圍（回傳 bbox）；全洋紅則回傳 null
+// Crop to the non-magenta area (returns the bbox); null if it's all magenta
 function bbox(img: Img): [number, number, number, number] | null {
   let minX = img.width, minY = img.height, maxX = -1, maxY = -1
   for (let y = 0; y < img.height; y++) {
@@ -151,7 +151,7 @@ function bbox(img: Img): [number, number, number, number] | null {
   return maxX < 0 ? null : [minX, minY, maxX + 1, maxY + 1]
 }
 
-// 依格線取樣成「原生」像素圖（色塊 = 1 畫素），洋紅變透明，裁到非透明範圍
+// Sample a "native" pixel image on the grid (block = 1 pixel), magenta → transparent, cropped to the opaque area
 function sampleNative(cell: Img, bx: number, ox: number, by: number, oy: number): Img | null {
   const nx = Math.floor((cell.width - ox) / bx), ny = Math.floor((cell.height - oy) / by)
   const out = blank(nx, ny, [0, 0, 0, 0])
@@ -163,8 +163,8 @@ function sampleNative(cell: Img, bx: number, ox: number, by: number, oy: number)
       if (!isMagenta(p)) out.data.set([p[0], p[1], p[2], 255], (j * nx + i) * 4)
     }
   }
-  // 去除邊緣的洋紅殘影：偏紫（r、b 都明顯高於 g，且 b > 70）且貼著透明（上下左右）的不透明畫素改成透明。
-  // 藍色 zZ（r 低）與粉紅腮紅（b 沒有明顯高於 g）不受影響。
+  // Remove magenta fringes: opaque pixels that are purplish (r and b clearly above g, and b > 70) and touch transparency (up/down/left/right) become transparent.
+  // Blue zZ (low r) and pink blush (b not clearly above g) are unaffected.
   const isClear = (x: number, y: number) => x < 0 || y < 0 || x >= nx || y >= ny || out.data[(y * nx + x) * 4 + 3]! === 0
   const fringe: number[] = []
   for (let y = 0; y < ny; y++) {
@@ -191,7 +191,7 @@ function bboxAlpha(img: Img): [number, number, number, number] | null {
   return maxX < 0 ? null : [minX, minY, maxX + 1, maxY + 1]
 }
 
-// 舊做法（沒有格線時的退路）：裁到非洋紅範圍 → 補成正方形 → 最近鄰縮成 SIZE×SIZE
+// Old approach (fallback without a grid): crop to non-magenta → pad to a square → nearest-neighbor down to SIZE×SIZE
 function cropAndResize(cell: Img): Img {
   const box = bbox(cell)
   const body = box ? crop(cell, ...box) : cell
@@ -218,7 +218,7 @@ function toSize(cell: Img, force?: { bx: number; by: number }): SpriteInfo {
   const fx = fitAxis(edgeHistogram(cell, 0), force?.bx), fy = fitAxis(edgeHistogram(cell, 1), force?.by)
   const native = fx.score >= GRID_MIN_SCORE && fy.score >= GRID_MIN_SCORE ? sampleNative(cell, fx.b, fx.o, fy.b, fy.o) : null
   if (!native) return { img: cropAndResize(cell), mode: 'fallback', bx: fx.b, by: fy.b, scoreX: fx.score, scoreY: fy.score }
-  // 超過 SIZE 才最近鄰縮小到放得下；否則不縮放。水平置中、底部對齊（讓花盆在各張間對齊）
+  // Shrink (nearest-neighbor) only when larger than SIZE; otherwise no scaling. Center horizontally, align to the bottom (so the pots line up across sprites)
   let sprite = native
   const longest = Math.max(native.width, native.height)
   if (longest > SIZE) {
@@ -241,7 +241,7 @@ function toSize(cell: Img, force?: { bx: number; by: number }): SpriteInfo {
   return { img: out, mode: 'grid', bx: fx.b, by: fy.b, scoreX: fx.score, scoreY: fy.score }
 }
 
-// median cut：每次切開「單一色版範圍最大」的盒子，直到 count 個或無法再切
+// median cut: repeatedly split the box with the widest single-channel range until there are count boxes or none can be split
 function medianCut(colors: Rgb[], count: number): Rgb[] {
   if (colors.length === 0) return []
   const boxes: Rgb[][] = [colors]
@@ -274,11 +274,11 @@ function nearest(palette: Rgb[], c: Rgb): number {
   return best
 }
 
-const RARE_DIST = 60 // 與最近調色盤色相差（RGB 絕對差總和）超過此值的像素算「被吃掉的稀有色」
+const RARE_DIST = 60 // pixels further than this from the nearest palette color (sum of RGB abs diffs) count as "swallowed rare colors"
 const RARE_MAX_ITER = 16
 
-// median cut 會把稀有但顯眼的色（如藍色 zZ、綠葉）併進大宗色。這裡把這些色補回：
-// 只要還有像素離調色盤太遠，就把最接近的兩個調色盤色（依像素數加權平均）合併，並把該像素色加進調色盤。
+// median cut merges rare but eye-catching colors (blue zZ, green leaves) into dominant ones. This adds them back:
+// while some pixel is too far from the palette, merge the two closest palette colors (pixel-count weighted average) and add that pixel's color.
 function protectRare(palette: Rgb[], opaque: Rgb[]): void {
   const dist = (a: Rgb, b: Rgb) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2])
   const counts = new Map<string, { c: Rgb; n: number }>()
@@ -289,7 +289,7 @@ function protectRare(palette: Rgb[], opaque: Rgb[]): void {
   }
   const distinct = [...counts.values()]
   for (let iter = 0; iter < RARE_MAX_ITER; iter++) {
-    // 找離調色盤最遠的像素色（以像素數加權決勝之外，先取最遠者）
+    // Find the pixel color furthest from the palette (furthest first, before any pixel-count tie-break)
     let worst: Rgb | null = null, worstD = RARE_DIST
     for (const { c } of distinct) {
       let d = Infinity
@@ -297,7 +297,7 @@ function protectRare(palette: Rgb[], opaque: Rgb[]): void {
       if (d > worstD) { worstD = d; worst = c }
     }
     if (!worst) return
-    // 每個調色盤色目前代表多少像素
+    // How many pixels each palette color currently stands for
     const weight = palette.map(() => 0)
     for (const { c, n } of distinct) weight[nearest(palette, c)]! += n
     let bi = 0, bj = 1, bd = Infinity
@@ -314,9 +314,9 @@ function protectRare(palette: Rgb[], opaque: Rgb[]): void {
   }
 }
 
-// 全部圖共用一組 ≤COLORS 色調色盤；只保留實際用到的顏色
-// paletteFrom：只用這些圖算 median cut（手改圖不參與，免得改一張就讓其他張配色跑掉）；
-// 手改圖裡離調色盤太遠的新顏色仍由 protectRare 補進來
+// All sprites share one palette of ≤COLORS colors; keep only colors actually used
+// paletteFrom: only these images feed the median cut (hand-edited sprites are left out so editing one doesn't shift the others' colors);
+// new colors in hand-edited sprites that are too far from the palette are still added by protectRare
 function quantize(images: Map<string, Img>, paletteFrom: Map<string, Img> = images): { palette: number[]; grids: Map<string, string> } {
   const pixels = (imgs: Iterable<Img>) => {
     const out: Rgb[] = []
@@ -330,7 +330,7 @@ function quantize(images: Map<string, Img>, paletteFrom: Map<string, Img> = imag
   const base = pixels(paletteFrom.values())
   const raw = medianCut(base, COLORS)
   protectRare(raw, base)
-  // 第二輪只看手改圖：沿用既有顏色時什麼都不會變，畫了新顏色才補
+  // Second pass looks only at hand-edited sprites: nothing changes when they reuse existing colors; only new colors get added
   protectRare(raw, pixels([...images].filter(([n, img]) => paletteFrom.get(n) !== img).map(([, img]) => img)))
   const index = new Map<string, number[]>()
   const used = new Set<number>()
@@ -354,8 +354,8 @@ function quantize(images: Map<string, Img>, paletteFrom: Map<string, Img> = imag
 
 function writeTs(path: string, palette: number[], sprites: Map<string, string>, faceBox: Manifest['faceBox']): void {
   const lines = [
-    '// 本檔由 scripts/build-sprites.ts 產生，請勿手動修改。',
-    `// 像素字串：${SIZE}×${SIZE} 逐列，'.' 透明，0–9、a–v 為 PALETTE 索引（base-32）。`,
+    '// Generated by scripts/build-sprites.ts. Do not edit by hand.',
+    `// Pixel strings: ${SIZE}×${SIZE} row by row, '.' transparent, 0–9 and a–v are PALETTE indices (base-32).`,
     '',
     `export const PALETTE: readonly number[] = [${palette.map(c => '0x' + c.toString(16).padStart(6, '0')).join(', ')}]`,
     '',
@@ -371,8 +371,8 @@ function writeTs(path: string, palette: number[], sprites: Map<string, string>, 
   writeFileSync(path, lines.join('\n') + '\n', 'utf8')
 }
 
-// 公開圖放大 PREVIEW_SCALE 倍、深灰底、排成一列
-// 每張終端版小圖存成 48×48 PNG，透明處填洋紅（小畫家不支援透明）
+// Public sprites scaled PREVIEW_SCALE times on dark gray, in one row
+// Each terminal sprite is saved as a 48×48 PNG with magenta for transparency (Paint doesn't support transparency)
 function writeTerminalPngs(dir: string, palette: number[], sprites: Map<string, string>): void {
   mkdirSync(dir, { recursive: true })
   for (const [name, px] of sprites) {
@@ -414,12 +414,12 @@ function writePreview(path: string, palette: number[], sprites: Map<string, stri
 }
 
 
-// ---- 高解析（HD）版：原圖軟去背 → 裁切 → 面積平均縮小 → 144×144 畫布 ----
+// ---- High-res (HD) version: soft-key the source → crop → area-average downscale → 144×144 canvas ----
 const HD_CANVAS = 144
 const HD_FIT = 136
 const HD_BOTTOM = 4
-const KEY_FULL = 150 // m = min(r,b) − g 超過此值：全透明
-const KEY_SOFT = 60 // 介於兩者之間：半透明並去洋紅溢色
+const KEY_FULL = 150 // m = min(r,b) − g above this: fully transparent
+const KEY_SOFT = 60 // in between: semi-transparent with the magenta spill removed
 
 function softKey(cell: Img): Img {
   const out = blank(cell.width, cell.height, [0, 0, 0, 0])
@@ -437,7 +437,7 @@ function softKey(cell: Img): Img {
   return out
 }
 
-// 面積平均（box filter），在預乘 alpha 空間計算；放大時退化成最近鄰
+// Area average (box filter) in premultiplied-alpha space; degrades to nearest-neighbor when upscaling
 function boxScale(src: Img, w: number, h: number): Img {
   const out = blank(w, h, [0, 0, 0, 0])
   const sx = src.width / w, sy = src.height / h
@@ -463,14 +463,14 @@ function boxScale(src: Img, w: number, h: number): Img {
   return out
 }
 
-// 去背並裁到內容範圍
+// Key out the background and crop to the content
 function hdBody(cell: Img): Img | null {
   const keyed = softKey(cell)
   const box = bboxAlpha(keyed)
   return box ? crop(keyed, ...box) : null
 }
 
-// 鍋子寬度：內容下方 35% 範圍內，不透明像素最寬的一列
+// Pot width: the widest row of opaque pixels within the bottom 35% of the content
 const POT_ZONE = 0.35
 function potWidth(body: Img): number {
   let widest = 0
@@ -484,8 +484,8 @@ function potWidth(body: Img): number {
   return widest || body.width
 }
 
-// 同一組（manifest 標了 potAnchor 的圖）共用「鍋子寬度」：每張縮放成一樣寬的鍋子，
-// 取所有圖都放得進 HD_FIT 的最大鍋寬，避免有 zZ、閃光的圖被縮得比較小
+// Sprites in one group (sheets marked potAnchor in the manifest) share a "pot width": each is scaled to the same pot width,
+// using the largest pot width at which every sprite fits HD_FIT, so sprites with zZ or sparkles aren't shrunk more
 function anchoredScales(bodies: Map<string, Img>): Map<string, number> {
   let target = Infinity
   const pots = new Map<string, number>()
@@ -497,7 +497,7 @@ function anchoredScales(bodies: Map<string, Img>): Map<string, number> {
   return new Map([...pots].map(([name, p]) => [name, target / p] as const))
 }
 
-// 眾數縮小：每個輸出像素取來源範圍內出現最多的顏色（不平均，邊緣不會糊）；不透明不到一半就留透明
+// Mode downscale: each output pixel takes the most frequent color in its source area (no averaging, so edges stay crisp); transparent if less than half is opaque
 function modeScale(src: Img, w: number, h: number): Img {
   const out = blank(w, h, [0, 0, 0, 0])
   const sx = src.width / w, sy = src.height / h
@@ -525,7 +525,7 @@ function modeScale(src: Img, w: number, h: number): Img {
   return out
 }
 
-// 對不上格線的格子（例如人工貼上、色塊比例不同）：用去背後的原圖眾數縮小，讓鍋子寬度跟同張其他格一樣
+// Cells that don't match the grid (e.g. pasted by hand with different block proportions): mode-downscale the keyed source so the pot width matches the other cells in the sheet
 function toSizeByPot(body: Img, potTarget: number): Img {
   const r = potTarget / potWidth(body)
   const w = Math.min(SIZE, Math.max(1, Math.round(body.width * r))), h = Math.min(SIZE, Math.max(1, Math.round(body.height * r)))
@@ -556,8 +556,8 @@ function pngBase64(img: Img): string {
 
 function writeHdTs(path: string, sprites: Map<string, string>): void {
   const lines = [
-    '// 本檔由 scripts/build-sprites.ts 產生，請勿手動修改。',
-    '// 桌面版面板用的高解析圖：144×144 透明底 PNG 的 base64。',
+    '// Generated by scripts/build-sprites.ts. Do not edit by hand.',
+    '// High-res sprites for the desktop pane: base64 of 144×144 transparent PNGs.',
     '',
     'export const SPRITES_HD: Readonly<Record<string, string>> = {',
   ]
@@ -566,7 +566,7 @@ function writeHdTs(path: string, sprites: Map<string, string>): void {
   writeFileSync(path, lines.join('\n') + '\n', 'utf8')
 }
 
-// 全部 HD 圖（含劇透）疊在深褐底卡上排成一列，人工確認用
+// All HD sprites (spoilers included) on dark brown cards in one row, for manual review
 function writeHdPreview(path: string, images: Map<string, Img>): void {
   const pad = 8
   const n = Math.max(images.size, 1)
@@ -600,10 +600,10 @@ function main(argv: string[]): number {
     const png = PNG.sync.read(readFileSync(join(src, sheet.file)))
     const cells = splitSheet({ width: png.width, height: png.height, data: png.data })
     if (cells.length !== sheet.cells.length) {
-      console.error(`${sheet.file}: 切出 ${cells.length} 格，但 manifest 列了 ${sheet.cells.length} 格`)
+      console.error(`${sheet.file}: cut into ${cells.length} cells, but the manifest lists ${sheet.cells.length}`)
       return 1
     }
-    // 色塊大小跟同張拼圖多數格差太多（例如某格是人工貼上、比例不同）就改用多數格的大小，免得那張小圖整個變大或變小
+    // If the block size differs too much from most cells in the sheet (e.g. a cell pasted by hand at another scale), use the majority size so that sprite doesn't come out bigger or smaller
     const infos = cells.map(c => toSize(c))
     const grid = infos.filter(f => f.mode === 'grid')
     const median = (v: number[]) => [...v].sort((a, b) => a - b)[v.length >> 1]!
@@ -612,18 +612,18 @@ function main(argv: string[]): number {
     sheet.cells.forEach((name, i) => {
       let info = infos[i]!
       if (ref && (Math.abs(info.bx / ref.bx - 1) > 0.1 || Math.abs(info.by / ref.by - 1) > 0.1)) {
-        console.log(`  ${name}: 色塊 ${info.bx.toFixed(2)}×${info.by.toFixed(2)} 與多數格不同，改用 ${ref.bx.toFixed(2)}×${ref.by.toFixed(2)}`)
+        console.log(`  ${name}: block ${info.bx.toFixed(2)}×${info.by.toFixed(2)} differs from most cells; using ${ref.bx.toFixed(2)}×${ref.by.toFixed(2)}`)
         info = toSize(cells[i]!, ref)
       }
       const body = hdBody(cells[i]!)
       if (info.mode === 'fallback' && potTarget && body) {
-        console.log(`  ${name}: 對不上格線，改用原圖眾數縮小，鍋寬對齊 ${potTarget}`)
+        console.log(`  ${name}: no grid match; using a mode downscale of the source, pot width aligned to ${potTarget}`)
         info = { ...info, img: toSizeByPot(body, potTarget) }
       }
       images.set(name, info.img)
       if (body && sheet.potAnchor) anchored.set(name, body)
       else if (body) hd.set(name, toHd(body))
-      console.log(`  ${name}: ${info.mode} 色塊 ${info.bx.toFixed(2)}×${info.by.toFixed(2)}，格線分數 ${info.scoreX.toFixed(2)}/${info.scoreY.toFixed(2)}`)
+      console.log(`  ${name}: ${info.mode} block ${info.bx.toFixed(2)}×${info.by.toFixed(2)}, grid score ${info.scoreX.toFixed(2)}/${info.scoreY.toFixed(2)}`)
       if (sheet.spoiler) spoilerNames.add(name)
     })
   }
@@ -631,11 +631,11 @@ function main(argv: string[]): number {
   for (const [name, file] of Object.entries(manifest.hdOverride ?? {})) {
     const png = PNG.sync.read(readFileSync(join(src, file)))
     if (png.width !== HD_CANVAS || png.height !== HD_CANVAS) {
-      console.error(`${file}: 高解析覆蓋圖必須是 ${HD_CANVAS}×${HD_CANVAS}`)
+      console.error(`${file}: the high-res override must be ${HD_CANVAS}×${HD_CANVAS}`)
       return 1
     }
     hd.set(name, { width: png.width, height: png.height, data: png.data })
-    console.log(`  ${name}: 高解析圖改用 ${file}`)
+    console.log(`  ${name}: high-res sprite from ${file}`)
   }
   const auto = new Map(images)
   for (const name of auto.keys()) {
@@ -643,7 +643,7 @@ function main(argv: string[]): number {
     if (!existsSync(file)) continue
     const png = PNG.sync.read(readFileSync(file))
     if (png.width !== SIZE || png.height !== SIZE) {
-      console.error(`terminal/${name}.png: 終端版手改圖必須是 ${SIZE}×${SIZE}`)
+      console.error(`terminal/${name}.png: a hand-edited terminal sprite must be ${SIZE}×${SIZE}`)
       return 1
     }
     const img: Img = { width: SIZE, height: SIZE, data: new Uint8Array(png.data) }
@@ -652,7 +652,7 @@ function main(argv: string[]): number {
       else img.data[i + 3] = 255
     }
     images.set(name, img)
-    console.log(`  ${name}: 終端版改用 terminal/${name}.png`)
+    console.log(`  ${name}: terminal sprite from terminal/${name}.png`)
   }
   const { palette, grids } = quantize(images, auto)
   const pub = new Map([...grids].filter(([n]) => !spoilerNames.has(n)))
@@ -666,7 +666,7 @@ function main(argv: string[]): number {
   writeHdTs(join(ROOT, 'hooks', 'sprites-hd.ts'), new Map([...hdB64].filter(([n]) => !spoilerNames.has(n))))
   writeFileSync(join(ROOT, 'art-build', 'spoiler_sprites_hd.json'), JSON.stringify(Object.fromEntries([...hdB64].filter(([n]) => spoilerNames.has(n)))), 'utf8')
   writeHdPreview(join(ROOT, 'art-build', 'preview-hd.png'), hd)
-  console.log(`調色盤 ${palette.length} 色；公開 ${pub.size} 張（HD ${hd.size} 張）、編碼 ${Object.keys(secret).length} 張`)
+  console.log(`Palette ${palette.length} colors; ${pub.size} public (${hd.size} HD), ${Object.keys(secret).length} encoded`)
   return 0
 }
 

@@ -6,10 +6,10 @@ import { FACE_BOX, PALETTE, SPRITES } from './sprites'
 import { SPRITES_HD } from './sprites-hd'
 import { FACE_TEXT, STAGE_NAME, bar, faceOf, hintOf, stageOf, strWidth } from './view'
 
-// 像素圖放越大越顯得粗，3 倍（144px）看起來最精緻
+// The bigger the pixel art, the coarser it looks; 3x (144px) looks the most refined
 const SVG_SCALE = 3
 export const SVG_PX = SIZE * SVG_SCALE
-// 深褐底色卡：白色蒸氣在淺色主題下才看得見
+// Dark brown backing card: without it the white steam is invisible on light themes
 const SVG_BACKGROUND = '#3b2f2a'
 
 export const ASCII_EGG: readonly string[][] = [
@@ -21,8 +21,8 @@ export const ASCII_EGG: readonly string[][] = [
 
 export type Art = { kind: 'raster'; cells: string } | { kind: 'svg'; source: string } | { kind: 'ascii'; lines: string[] }
 
-// 階段圖本身就是笑臉：開心／普通用階段圖，其餘表情用 face_<表情> 整張圖。
-// 不做臉部疊圖（FACE_BOX 為 null）；仍回傳圖層陣列，之後的成長提示圖層加在最後即可
+// The stage sprites already have a smiling face: happy/normal use the stage sprite, other faces use the full face_<face> sprite.
+// No face overlay (FACE_BOX is null); still returns a layer array so growth-hint layers can be appended later
 function eggSpriteKey(s: Save, t: LocalTime, now: number): string {
   const face = faceOf(s, t, now)
   return face === 'happy' || face === 'normal' ? `stage${stageOf(s.egg.progress)}` : `face_${face}`
@@ -32,7 +32,7 @@ export function eggLayers(s: Save, t: LocalTime, now: number): Layer[] {
   const key = eggSpriteKey(s, t, now)
   const base = SPRITES[key]
   const layers: Layer[] = []
-  // FACE_BOX 分支目前用不到，保留給之後的疊圖圖層
+  // The FACE_BOX branch is unused for now; kept for future overlay layers
   if (base) layers.push(FACE_BOX && key.startsWith('face_') ? { pixels: base, box: FACE_BOX } : { pixels: base })
   return layers
 }
@@ -43,7 +43,7 @@ function artOf(pixels: string, surface: string): Art {
     : { kind: 'svg', source: svgSource(pixels, PALETTE, SVG_SCALE, SVG_BACKGROUND) }
 }
 
-// 桌面版：有原圖高解析 PNG 就嵌進 SVG（深褐底卡 + <image>），否則退回像素 SVG
+// Desktop: embed the original high-res PNG in an SVG when available (dark brown card + <image>), else fall back to the pixel SVG
 function hdArt(b64: string | undefined): Art | null {
   if (!b64) return null
   const href = `data:image/png;base64,${b64}`
@@ -59,7 +59,7 @@ function hdArt(b64: string | undefined): Art | null {
 
 const FACE_COLS = 4
 
-// 依顯示寬度截斷再補空白（全形字佔 2 格、組合字元佔 0 格）
+// Truncate by display width, then pad with spaces (full-width chars take 2 columns, combining marks 0)
 function fitWidth(text: string, cols: number): string {
   let out = ''
   for (const ch of text) {
@@ -74,7 +74,7 @@ export function eggArt(s: Save, t: LocalTime, now: number, surface: string, colu
   const tooNarrow = surface === 'terminal' && columns < SIZE
   if (layers.length === 0 || tooNarrow) {
     const stage = stageOf(s.egg.progress)
-    // 外框裡只放 4 格寬的臉（去掉括號），維持對齊
+    // Only a 4-column face goes inside the frame (parentheses removed) to keep alignment
     const face = fitWidth(FACE_TEXT[faceOf(s, t, now)].replace(/[()]/g, ''), FACE_COLS)
     return { kind: 'ascii', lines: [...ASCII_EGG[stage]!.map(l => l.replace('FACE', face)), `   ${STAGE_NAME[stage]}`] }
   }
@@ -85,7 +85,7 @@ export function eggArt(s: Save, t: LocalTime, now: number, surface: string, colu
   return artOf(compose(layers), surface)
 }
 
-// 開發用預覽：依序檢視每張公開圖，不讀也不改存檔
+// Dev preview: step through each public sprite without reading or changing the save
 export const PREVIEW_KEYS = [
   'stage0', 'stage1', 'stage2', 'stage3',
   'face_happy', 'face_normal', 'face_bored', 'face_dry', 'face_sleep', 'face_flip', 'face_done',
@@ -105,7 +105,7 @@ export const PREVIEW_LABELS: Record<string, string> = {
   face_done: '表情：剛出鍋',
 }
 
-// 依指令參數決定要預覽哪張：空白＝下一張、數字＝第幾張（從 1 起）、或直接給圖名；off＝結束
+// Pick the preview from the command argument: empty = next, number = nth (1-based), or a sprite name; off = stop
 export function nextPreview(current: string | null, arg: string): string | null | undefined {
   const a = arg.trim()
   if (a === 'off') return null
@@ -129,7 +129,7 @@ export function previewArt(key: string, surface: string, columns: number): Art |
   return pixels ? artOf(pixels, surface) : null
 }
 
-// 圖鑑圖（C/D 組素材）還沒做：取不到就回 null，圖鑑只顯示文字
+// Dex sprites (art sets C/D) aren't drawn yet: return null when missing and the dex shows text only
 export function dexArt(id: string, owned: boolean, surface: string): Art | null {
   const pixels = owned ? decodeSpoilers().sprites[id] : SPRITES.locked
   if (!pixels) return null

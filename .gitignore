@@ -1,14 +1,14 @@
-# 設計文件與劇透原始資料：絕不進 repo（一旦 commit 過，歷史裡就刪不掉）
+# Design doc and raw spoiler data: never commit (once committed, history can't forget it)
 tea-egg-design.md
 spoilers.source.json
 art-source/
 art-build/
 
-# 實作計畫含劇透細節，只留本機
+# Implementation plans contain spoiler details; keep them local only
 docs/superpowers/
 .superpowers/
 
-# 雜項
+# Misc
 .claude-plugin/types/
 __pycache__/
 *.pyc

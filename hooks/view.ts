@@ -36,7 +36,7 @@ export function stageOf(progress: number): 0 | 1 | 2 | 3 {
   return 3
 }
 
-// 與像素圖一致：40–69% 淺杏色、70% 以上淺褐色
+// Matches the pixel art: 40–69% light amber, 70% and up light brown
 export const STAGE_COLOR = ['#f2efe6', '#f2efe6', '#f0c9a2', '#c98f5c'] as const
 export const STAGE_NAME = ['生蛋', '裂紋', '入味', '滷透'] as const
 
@@ -108,7 +108,7 @@ export function bandSegments(s: Save, t: LocalTime, now: number): Seg[] {
   return segs
 }
 
-// 從右邊整段丟掉直到放得下；第一段（蛋本身）永遠保留，必要時截斷
+// Drop whole segments from the right until it fits; the first segment (the egg) always stays, truncated if needed
 export function fitSegments(segs: Seg[], columns: number): Seg[] {
   const out = [...segs]
   const width = () => out.reduce((w, seg) => w + strWidth(seg.text), 0)

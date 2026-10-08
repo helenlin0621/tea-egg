@@ -1,5 +1,5 @@
-// 產生假的拼圖素材到 art-build/test-source/，用來驗證 build-sprites.ts（不依賴正式素材）。
-// 用法：npm run test-sheet
+// Generate fake sprite sheets into art-build/test-source/ to exercise build-sprites.ts (without the real art).
+// Usage: npm run test-sheet
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,7 +11,7 @@ const OUT = join(ROOT, 'art-build', 'test-source')
 
 type Sheet = { file: string; cells: string[] }
 
-// n 顆蛋排成一列，蛋之間與四周是洋紅色分隔
+// n eggs in a row, separated and surrounded by magenta
 function sheet(n: number, color: [number, number, number]): Buffer {
   const png = new PNG({ width: n * 70 + 10, height: 80 })
   for (let y = 0; y < png.height; y++) {
@@ -34,4 +34,4 @@ manifest.sheets.forEach((s, i) => {
   writeFileSync(join(OUT, s.file), sheet(s.cells.length, [240 - i * 30, 220 - i * 25, 200 - i * 20]))
 })
 writeFileSync(join(OUT, 'manifest.json'), JSON.stringify(manifest), 'utf8')
-console.log(`已產生 ${manifest.sheets.length} 張測試拼圖到 art-build/test-source`)
+console.log(`Generated ${manifest.sheets.length} test sheets in art-build/test-source`)

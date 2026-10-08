@@ -1,4 +1,4 @@
-export type DateKey = string // 'YYYY-MM-DD'（當地日期）
+export type DateKey = string // 'YYYY-MM-DD' (local date)
 
 export type EggRecord = {
   startedAt: number
@@ -8,7 +8,7 @@ export type EggRecord = {
   sessionMinutes: number
   testRuns: number
   testFails: number
-  cracked: string | null // 觸發的危險指令關鍵字
+  cracked: string | null // keyword of the dangerous command that triggered it
 }
 
 export type Egg = {
@@ -18,7 +18,7 @@ export type Egg = {
   broth: number
   mood: number
   flipWantedAt: number | null
-  activeMinutes: number // 距上次翻身累積的活動分鐘
+  activeMinutes: number // active minutes accumulated since the last flip
   record: EggRecord
 }
 

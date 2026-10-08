@@ -2,7 +2,7 @@
   "name": "tea-egg-dev",
   "private": true,
   "type": "module",
-  "description": "茶葉蛋養成計畫的開發用腳本（Mod 本身不需要 Node）",
+  "description": "Dev scripts for tea-egg (the Mod itself does not need Node)",
   "engines": {
     "node": ">=22.18"
   },

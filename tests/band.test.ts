@@ -10,7 +10,7 @@ const PROPS = {
   view: {},
 } as const
 
-test('橫條在 terminal 與 desktop 都畫得出來', async ($, on) => {
+test('The band renders on both terminal and desktop', async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 6) })
   mock.env(on, {})

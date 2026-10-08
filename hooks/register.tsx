@@ -11,7 +11,7 @@ import { TEXT } from './text'
 import { RASTER_ROWS, SIZE } from './pixels'
 import { bandSegments, fitSegments } from './view'
 
-// state 參照的 plugin / key 必須是字面值，且寫在使用 $.state 的這個檔案裡
+// state refs' plugin / key must be literals, written in this file (the one that uses $.state)
 const SAVE_REF = { plugin: 'tea-egg', key: 'save' } as const
 const SHOW_DEX_REF = { plugin: 'tea-egg', key: 'showDex' } as const
 const COUNTED_REF = { plugin: 'tea-egg', key: 'sessionCounted' } as const
@@ -23,9 +23,9 @@ const rng = Math.random
 
 let clock: ClockConfig = { offsetMinutes: systemOffset, fake: null, loadedAt: 0 }
 export const localNow = (now: number): LocalTime => localTime(now, clock)
-// 沒有人在看的 session（claude -p、SDK 腳本、排程）不參與養蛋；有畫面接上才轉為 true
+// Sessions nobody is watching (claude -p, SDK scripts, schedules) don't raise the egg; becomes true once a surface attaches
 let interactive = false
-// 假日期生效時讀寫另一份存檔
+// Read and write a separate save while a fake date is in effect
 const storeKey = () => (clock.fake ? FAKE_STORE_KEY : STORE_KEY)
 
 function commandOf(e: { tool: string }): string {
@@ -33,7 +33,7 @@ function commandOf(e: { tool: string }): string {
   return typeof command === 'string' ? command : ''
 }
 
-// 載入器不跟隨 $ 跨 import：所有 $.xxx 呼叫都寫在這個檔案裡
+// The loader doesn't follow $ across imports: every $.xxx call is written in this file
 const ioOf = ($: EngineInterface): StoreIo => ({
   now: () => $.clock.now(),
   read: () => $.store.get(storeKey()),
@@ -46,7 +46,7 @@ const ioOf = ($: EngineInterface): StoreIo => ({
   },
 })
 
-// 側邊面板開關：/egg 與橫條按鈕共用；回傳開關後的狀態
+// Toggle the side pane: shared by /egg and the band button; returns the state after toggling
 async function togglePane($: EngineInterface): Promise<boolean> {
   if ((await $.ui.panes()).some(p => p.id === PANE)) {
     await $.ui.close({ id: PANE })
@@ -56,11 +56,11 @@ async function togglePane($: EngineInterface): Promise<boolean> {
   return true
 }
 
-// 每次載入只啟用一次；計時器握柄留著，重新註冊前先取消
+// Activate only once per load; keep the timer handle and cancel it before registering again
 let tick: Timer | null = null
 
-// 桌面版開新 session 時畫面常常比 Mod 晚接上，attach 訊號會漏掉：
-// session.start 沒看到畫面就每 3 秒查一次，最多 10 分鐘，看到就啟用
+// On desktop a new session's surface often attaches after the Mod loads, so the attach signal is missed:
+// if session.start sees no surface, poll every 3 seconds for up to 10 minutes and activate once one shows up
 const WATCH_MS = 3_000
 const WATCH_LIMIT = 200
 let watch: Timer | null = null
@@ -94,7 +94,7 @@ function watchForSurface($: EngineInterface): void {
 }
 
 async function activate($: EngineInterface): Promise<void> {
-  // 同步先占位，避免 start 與 attach 同時進來而重複啟用
+  // Claim the slot synchronously so start and attach arriving together don't activate twice
   if (interactive) return
   interactive = true
   try {
@@ -112,7 +112,7 @@ async function activate($: EngineInterface): Promise<void> {
       void mutate(ioOf($), (s, at) => onTick(s, at, localNow(at), rng)).catch(() => undefined)
     })
   } catch {
-    // 蛋出錯不影響使用者
+    // An egg error must never affect the user
   }
 }
 
@@ -120,32 +120,32 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     try {
       await $.command.register({ name: 'egg', description: '茶葉蛋養成計畫：/egg [refill|flip|dex|name 名字|help]' })
-      // 有人在看才啟用：互動 session，或已經有畫面接上（桌面版熱重載不會再發 attach）
+      // Activate only if someone is watching: an interactive session, or a surface already attached (a desktop hot reload sends no new attach)
       const seen = e.isInteractive === true || (await hasSurface($))
       if (seen) await activate($)
       else watchForSurface($)
     } catch {
-      // 蛋出錯不影響使用者
+      // An egg error must never affect the user
     }
     return next(e)
   })
 
-  // 桌面版（SDK host）session.start 時沒有畫面，之後才連上
+  // Desktop (SDK host): no surface at session.start; it connects later
   on('session.attach', async ($, e, next) => {
     try {
       await activate($)
     } catch {
-      // 靜默略過
+      // Ignore silently
     }
     return next(e)
   })
 
-  // 使用者送出訊息時若已有畫面接著，就算之前漏掉訊號也在這裡啟用（這一輪的入味才不會漏算）
+  // If a surface is attached when the user submits a message, activate here even if earlier signals were missed (so this turn's flavor counts)
   on('prompt.submit', async ($, e, next) => {
     try {
       if (!interactive && (await hasSurface($))) await activate($)
     } catch {
-      // 靜默略過
+      // Ignore silently
     }
     return next(e)
   })
@@ -157,12 +157,12 @@ export const register: Register = on => {
         await mutate(ioOf($), (s, at) => onTurn(s, at, localNow(at), rng))
       }
     } catch {
-      // 靜默略過
+      // Ignore silently
     }
     return ran
   })
 
-  // 只觀察：一定呼叫 next(e)，並原樣回傳它的結果
+  // Observe only: always call next(e) and return its result unchanged
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
     try {
@@ -172,29 +172,29 @@ export const register: Register = on => {
       const obs = observe(tool, command, ran)
       if (obs !== null) await mutate(ioOf($), (s, at) => onObserved(s, at, localNow(at), obs, rng))
     } catch {
-      // 靜默略過
+      // Ignore silently
     }
     return ran
   })
 
-  // 輸入框上方的橫條；出錯或有問卷時一律讓路
+  // The band above the prompt; always steps aside on errors or when a survey is showing
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     try {
-      // 輸入框被畫出來＝有畫面接著；繪圖中不能寫 state，所以排到下一刻再啟用
+      // The prompt being drawn means a surface is attached; state can't be written during render, so activate on the next tick
       if (!interactive) $.clock.after(0, () => void activate($))
       if (e.props.hasSurvey) return next(e)
       const save = (await $.state.get(SAVE_REF)).value
       if (!save) return next(e)
       const now = await $.clock.now()
       const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
-      // 右邊留 6 格給「面板」按鈕（空白 1 格＋全形 2 字＋邊距）
+      // Reserve 6 columns on the right for the panel button (1 space + 2 full-width chars + margin)
       const segs = fitSegments(bandSegments(save, localNow(now), now), Math.max(10, columns - 6))
       const { Box, Text, Button } = $.ui.resolve(e)
       const onPanel = async () => {
         try {
           await togglePane($)
         } catch {
-          // 按鈕出錯不影響使用者
+          // A button error must never affect the user
         }
       }
       return (
@@ -220,7 +220,7 @@ export const register: Register = on => {
       const now = await $.clock.now()
       const t = localNow(now)
       const columns = e.props.bodyColumns ?? e.viewport?.columns ?? SIZE
-      // terminal 才有 Raster，其餘 surface 才有 Svg
+      // Only terminal has Raster; other surfaces only have Svg
       const draw = (art: Art | null, key: string) => {
         if (art === null) return null
         if (art.kind === 'raster' && e.surface === 'terminal') {
@@ -240,7 +240,7 @@ export const register: Register = on => {
           const step = await mutate(ioOf($), (s, at) => onCommand(s, at, localNow(at), args, rng))
           if (step.reply) $.ui.toast(step.reply)
         } catch {
-          // 按鈕出錯不影響使用者
+          // A button error must never affect the user
         }
       }
       const slots = decodeSpoilers().dexSlots
@@ -275,12 +275,12 @@ export const register: Register = on => {
 
   on('command.run', { command: 'egg' }, async ($, e) => {
     try {
-      // 有人親手打了 /egg，就代表有人在看（桌面版的 attach 訊號可能早於 Mod 載入而漏掉）
+      // Someone typed /egg by hand, so someone is watching (on desktop the attach signal may come before the Mod loads and be missed)
       if (!interactive && e.origin.kind !== 'plugin') await activate($)
       if (!interactive) return { text: TEXT.help }
       const args = e.args.trim()
       if (args === '') return { text: (await togglePane($)) ? TEXT.paneOpened : TEXT.paneClosed }
-      // 開發用預覽：只切換顯示的圖，不讀也不改存檔
+      // Dev preview: only switches the displayed sprite; never reads or changes the save
       if (args === 'preview' || args.startsWith('preview ')) {
         const current = (await $.state.get(PREVIEW_REF)).value ?? null
         const chosen = nextPreview(current, args.slice('preview'.length))

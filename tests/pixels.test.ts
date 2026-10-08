@@ -14,26 +14,26 @@ function decodeCells(b64: string): number[] {
   return Array.from({ length: bin.length / 4 }, (_, i) => view.getUint32(i * 4, true))
 }
 
-test('Raster：48 欄 × 24 列，上半方塊對應上下兩個像素', async () => {
+test('Raster: 48 columns × 24 rows; an upper half block maps two stacked pixels', async () => {
   const px = set(set(blank, 0, 0, '0'), 0, 1, '1')
   const words = decodeCells(rasterCells(px, PAL))
   expect(words.length).toBe(48 * 24 * 3)
   expect(words.slice(0, 3)).toEqual([0x2580, 0xff0000, 0x00ff00])
 })
 
-test('Raster：只有下半有色時用下半方塊，透明用終端機預設色', async () => {
+test('Raster: lower half block when only the bottom is colored; transparent uses the terminal default color', async () => {
   const words = decodeCells(rasterCells(set(blank, 1, 1, '0'), PAL))
   expect(words.slice(3, 6)).toEqual([0x2584, 0xff0000, 0x01000000])
   expect(words.slice(6, 9)).toEqual([0x20, 0x01000000, 0x01000000])
 })
 
-test('Raster：索引 10–31 用 a–v 解（base-32）', async () => {
+test('Raster: indices 10–31 decode from a–v (base-32)', async () => {
   const pal = Array.from({ length: 32 }, (_, i) => i)
   const words = decodeCells(rasterCells(set(set(blank, 0, 0, 'a'), 0, 1, 'v'), pal))
   expect(words.slice(0, 3)).toEqual([0x2580, 10, 31])
 })
 
-test('SVG：同色相鄰像素合併、透明不畫', async () => {
+test('SVG: adjacent same-color pixels merge; transparent pixels are not drawn', async () => {
   const px = set(set(set(blank, 0, 0, '0'), 1, 0, '0'), 3, 0, '1')
   const svg = svgSource(px, PAL, 4)
   expect(svg.startsWith('<svg')).toBe(true)
@@ -42,7 +42,7 @@ test('SVG：同色相鄰像素合併、透明不畫', async () => {
   expect(svg.includes('#ff00ff')).toBe(false)
 })
 
-test('疊圖：只在指定範圍內、只覆蓋不透明像素', async () => {
+test('Overlay: only inside the given box, and only opaque pixels overwrite', async () => {
   const base = '0'.repeat(SIZE * SIZE)
   const top = set(set(blank, 5, 5, '1'), 20, 20, '1')
   const out = compose([{ pixels: base }, { pixels: top, box: [0, 0, 10, 10] }])

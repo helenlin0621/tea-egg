@@ -10,7 +10,7 @@ const PROPS = {
   view: {},
 } as const
 
-test('面板在 terminal 與 desktop 都畫得出來，按鈕可用', async ($, on) => {
+test('The pane renders on terminal and desktop and its buttons work', async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 6) })
   mock.env(on, {})

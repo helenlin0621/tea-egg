@@ -1,4 +1,4 @@
-// 非劇透的介面文字。劇透文字在 spoilers.ts。
+// Non-spoiler UI text. Spoiler text lives in spoilers.ts.
 export const TEXT = {
   welcome: '🥚 你領到了第一顆蛋！把它滷成茶葉蛋吧。輸入 /egg 查看',
   brothLow: '滷汁快乾了',

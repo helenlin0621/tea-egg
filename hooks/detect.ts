@@ -1,16 +1,16 @@
-// 這個 Mod 會看你的哪些指令：只看 Bash / PowerShell 的指令文字與成功與否，
-// 用來判斷「跑了測試」與「下了危險指令」。只觀察，不阻擋、不修改。
-// 只有「真的執行」才算：引號內的字串、heredoc 的內文、grep 的搜尋字都只是「提到」，不算。
+// Which of your commands this Mod looks at: only the text and success/failure of Bash / PowerShell commands,
+// used to tell "ran tests" and "ran a dangerous command". It only observes; it never blocks or modifies anything.
+// Only real execution counts: quoted strings, heredoc bodies and grep patterns are just "mentions" and don't count.
 
 export const OBSERVED_TOOLS = ['Bash', 'PowerShell'] as const
 
-// 測試指令：測試執行器必須是某一段的指令字（第一個字），或緊接在下列啟動方式之後
-// - npm / pnpm / yarn [run] test（含 test:unit 這類）
-// - npx jest、npx vitest
-// - vitest、jest、pytest、rspec、phpunit
-// - python -m pytest、python3 -m pytest、py -m pytest
+// Test commands: the test runner must be the command word (first word) of a segment, or directly follow one of these launchers
+// - npm / pnpm / yarn [run] test (including test:unit and the like)
+// - npx jest, npx vitest
+// - vitest, jest, pytest, rspec, phpunit
+// - python -m pytest, python3 -m pytest, py -m pytest
 // - go / cargo / mvn / gradle / dotnet test
-// - gradlew test（含 ./gradlew、.\gradlew、gradlew.bat）
+// - gradlew test (including ./gradlew, .\gradlew, gradlew.bat)
 export const TEST_COMMANDS: readonly RegExp[] = [
   /^(?:npm|pnpm|yarn)\s+(?:run\s+)?test\b/,
   /^npx\s+(?:jest|vitest)\b/,
@@ -27,7 +27,7 @@ export function isTestCommand(cmd: string): boolean {
   })
 }
 
-// 去掉 heredoc 的內文：從 <<WORD 那一行之後，到單獨一行 WORD 為止
+// Strip heredoc bodies: from the line after <<WORD up to a line containing only WORD
 function withoutHeredocs(cmd: string): string {
   const out: string[] = []
   let end: string | null = null
@@ -43,12 +43,12 @@ function withoutHeredocs(cmd: string): string {
   return out.join('\n')
 }
 
-// 去掉引號內的字串：只是「提到」危險指令（commit 訊息、grep 關鍵字）不算
+// Strip quoted strings: merely "mentioning" a dangerous command (commit messages, grep patterns) doesn't count
 function unquoted(cmd: string): string {
   return cmd.replace(/'[^']*'|"(?:\\.|[^"\\])*"/g, '""')
 }
 
-// 依 ; & | ( ) 換行 分段；去掉開頭的 sudo 與 VAR=value
+// Split on ; & | ( ) and newlines; drop a leading sudo and VAR=value
 function segments(cmd: string): string[][] {
   return unquoted(withoutHeredocs(cmd))
     .split(/[;&|()\n]+/)
@@ -65,14 +65,14 @@ function shortFlags(words: string[]): string {
   return words.filter(w => /^-[A-Za-z]+$/.test(w)).map(w => w.slice(1)).join('')
 }
 
-// 監看的危險指令：
-// - rm -rf（遞迴 + 強制刪除）
-// - git push --force / -f / --force-with-lease（強制推送）
+// Dangerous commands we watch for:
+// - rm -rf (recursive + forced delete)
+// - git push --force / -f / --force-with-lease (force push)
 // - git reset --hard
-// - git clean -fd（不含 -n / --dry-run 乾執行）
+// - git clean -fd (not with -n / --dry-run)
 // - chmod -R 777
-// - SQL 的 DROP TABLE / DROP DATABASE / TRUNCATE：只在某一段的指令字是 SQL 客戶端時才算
-//   （psql、mysql、mariadb、sqlite3、sqlcmd、duckdb、sqlplus、clickhouse-client、Invoke-Sqlcmd）
+// - SQL DROP TABLE / DROP DATABASE / TRUNCATE: only when the command word of some segment is an SQL client
+//   (psql, mysql, mariadb, sqlite3, sqlcmd, duckdb, sqlplus, clickhouse-client, Invoke-Sqlcmd)
 
 const SQL_CLIENTS = new Set([
   'psql', 'mysql', 'mariadb', 'sqlite3', 'sqlcmd', 'duckdb', 'sqlplus', 'clickhouse-client', 'invoke-sqlcmd',
@@ -108,7 +108,7 @@ export function dangerKeyword(cmd: string): string | null {
       return 'chmod -R 777'
     }
   }
-  // SQL 通常寫在引號或 heredoc 裡，所以有 SQL 客戶端時對原始全文比對
+  // SQL usually sits inside quotes or a heredoc, so when an SQL client is present we match against the raw text
   if (segs.some(words => isSqlClient(words[0]!))) {
     for (const [re, keyword] of SQL) if (re.test(cmd)) return keyword
   }
@@ -123,7 +123,7 @@ export function observe(tool: string, command: string, ran: { deny?: string; isE
   const isShell = (OBSERVED_TOOLS as readonly string[]).includes(tool)
   const cmd = typeof command === 'string' ? command : ''
   const test = isShell && isTestCommand(cmd) ? (failed ? 'fail' : 'pass') : null
-  // 危險指令只在真的執行成功時才算（被拒絕、失敗的不算）
+  // Dangerous commands only count when they actually ran successfully (denied or failed calls don't)
   const danger = isShell && !failed ? dangerKeyword(cmd) : null
   if (!failed && test === null && danger === null) return null
   return { failed, test, danger }

@@ -9,7 +9,7 @@ import { TEXT, fill } from './text'
 
 const NAME_MAX = 12
 
-// 把第二步接在第一步後面：沿用第二步的存檔，累積效果
+// Run the second step on the first step's result: keep the second step's save and accumulate the effects
 function then(first: Step, second: (s: Save) => Step): Step {
   const next = second(first.save)
   return { save: next.save, effects: [...first.effects, ...next.effects], reply: next.reply ?? first.reply }
@@ -26,7 +26,7 @@ export function onSessionOpen(prev: Save, now: number, t: LocalTime, isNewSessio
     save.welcomed = true
     step.effects.push({ kind: 'toast', text: TEXT.welcome })
   }
-  save.clocks.lastTickAt = now // 關閉期間不追溯
+  save.clocks.lastTickAt = now // no catching up on time while closed
   save.clocks.bucketStart = now
   save.clocks.bucketActive = false
   const made = then(step, s => specialMakeup(s, t))

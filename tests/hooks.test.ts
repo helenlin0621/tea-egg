@@ -3,7 +3,7 @@ import { decodeSpoilers } from '../hooks/spoilers'
 import { STORE_KEY, newSave } from '../hooks/model'
 
 const START = { cwd: '.', surface: 'terminal', isInteractive: true } as const
-// 外掛底下沒有核心：測試要自己回答被接線的事件
+// There's no core under the plugin: tests must answer the wired events themselves
 function base(on: Parameters<Parameters<typeof test>[1]>[1]): void {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('turn.complete', () => ({ text: '' }))
@@ -12,7 +12,7 @@ function base(on: Parameters<Parameters<typeof test>[1]>[1]): void {
 }
 const BASH_OK = { result: { stdout: 'ok', stderr: '', interrupted: false }, isError: false }
 
-// 測試的 $ 沒有 $.state（kit 只提供事件呼叫）；用一個內嵌外掛當探針，讀 tea-egg.save（任何外掛都可讀）
+// The test $ has no $.state (the kit only offers event calls); an inline plugin acts as a probe that reads tea-egg.save (any plugin may read it)
 const peekPlugin = {
   name: 'peek',
   register: (on: Parameters<Parameters<typeof test>[1]>[1]) => {
@@ -31,7 +31,7 @@ type SaveValue = {
   dateMode: Record<string, { human: number }>
 }
 
-test('觀察 Bash：結果原樣回傳、沒有被阻擋', OPTS, async ($, on) => {
+test('Observing Bash: the result is returned unchanged and not blocked', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, {})
@@ -44,7 +44,7 @@ test('觀察 Bash：結果原樣回傳、沒有被阻擋', OPTS, async ($, on) =
   expect((ran.result as { stdout: string }).stdout).toBe('ok')
 })
 
-test('危險指令讓蛋立即出鍋', OPTS, async ($, on) => {
+test('A dangerous command harvests the egg immediately', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, {})
@@ -56,7 +56,7 @@ test('危險指令讓蛋立即出鍋', OPTS, async ($, on) => {
   expect(value!.egg.no).toBe(2)
 })
 
-test('subagent 的 turn 不算入味', OPTS, async ($, on) => {
+test('Subagent turns do not add flavor', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, {})
@@ -68,7 +68,7 @@ test('subagent 的 turn 不算入味', OPTS, async ($, on) => {
   expect((await saved($)).egg.progress).toBe(1)
 })
 
-test('重新觸發 session.start 不重複計算 session', OPTS, async ($, on) => {
+test('Re-firing session.start does not count the session twice', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, {})
@@ -78,7 +78,7 @@ test('重新觸發 session.start 不重複計算 session', OPTS, async ($, on) =
   expect((await saved($)).egg.record.sessionCount).toBe(1)
 })
 
-test('非互動 session 不參與', OPTS, async ($, on) => {
+test('Non-interactive sessions do not take part', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, {})
@@ -97,7 +97,7 @@ test('非互動 session 不參與', OPTS, async ($, on) => {
 const HEADLESS = { cwd: '.', surface: null, isInteractive: false } as const
 const ATTACH = { surface: 'desktop', clientId: 'c1' } as const
 
-test('桌面版：start 時無畫面，之後 attach 才啟用', OPTS, async ($, on) => {
+test('Desktop: no surface at start; activates only after attach', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, {})
@@ -113,7 +113,7 @@ test('桌面版：start 時無畫面，之後 attach 才啟用', OPTS, async ($,
   expect(value.egg.record.sessionCount).toBe(1)
 })
 
-test('attach 兩次不重複計算 session', OPTS, async ($, on) => {
+test('Attaching twice does not count the session twice', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, {})
@@ -125,20 +125,20 @@ test('attach 兩次不重複計算 session', OPTS, async ($, on) => {
   expect((await saved($)).egg.record.sessionCount).toBe(1)
 })
 
-test('假日期不動到真實存檔', OPTS, async ($, on) => {
+test('A fake date never touches the real save', OPTS, async ($, on) => {
   const real = newSave(Date.UTC(2026, 9, 7, 2))
   real.egg.progress = 42
   mock.store(on, { [STORE_KEY]: real })
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   const dm = decodeSpoilers().dateMode
-  mock.env(on, { TEA_EGG_FAKE_DATE: `2026-${String((dm.month % 12) + 1).padStart(2, '0')}-15` }) // 不是特殊日期
+  mock.env(on, { TEA_EGG_FAKE_DATE: `2026-${String((dm.month % 12) + 1).padStart(2, '0')}-15` }) // not the special date
   base(on)
   await $.session.start(START)
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
-  expect((await saved($)).egg.progress).toBe(1) // 從另一份存檔開始，不是 43
+  expect((await saved($)).egg.progress).toBe(1) // starts from the other save, not 43
 })
 
-test('沒有假日期時讀寫真實存檔', OPTS, async ($, on) => {
+test('Without a fake date the real save is read and written', OPTS, async ($, on) => {
   const real = newSave(Date.UTC(2026, 9, 7, 2))
   real.egg.progress = 42
   mock.store(on, { [STORE_KEY]: real })
@@ -150,7 +150,7 @@ test('沒有假日期時讀寫真實存檔', OPTS, async ($, on) => {
   expect((await saved($)).egg.progress).toBe(43)
 })
 
-test('/egg 子指令有回覆', OPTS, async ($, on) => {
+test('/egg subcommands reply', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, {})
@@ -160,7 +160,7 @@ test('/egg 子指令有回覆', OPTS, async ($, on) => {
   expect(r.text).toBe('滷汁加滿了！蛋看起來很開心 (•ᴗ•)')
 })
 
-test('特殊日期模式：假日期環境變數生效、原本的蛋不動', OPTS, async ($, on) => {
+test('Special-date mode: the fake-date env var takes effect; the real egg is untouched', OPTS, async ($, on) => {
   const dm = decodeSpoilers().dateMode
   const pad = (n: number) => String(n).padStart(2, '0')
   mock.store(on)
@@ -177,7 +177,7 @@ test('特殊日期模式：假日期環境變數生效、原本的蛋不動', OP
 
 const SDK_START = { cwd: '.', surface: null, isInteractive: false } as const
 
-test('桌面版：開場還沒有畫面，畫面晚幾秒接上也會自動啟用', OPTS, async ($, on) => {
+test('Desktop: no surface at start; activates automatically when one attaches a few seconds later', OPTS, async ($, on) => {
   mock.store(on)
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, {})
@@ -191,7 +191,7 @@ test('桌面版：開場還沒有畫面，畫面晚幾秒接上也會自動啟�
   expect((await saved($)).egg.record.sessionCount).toBe(1)
 })
 
-test('沒有任何畫面的 session（-p、腳本）不會啟用', OPTS, async ($, on) => {
+test('Sessions with no surface at all (-p, scripts) never activate', OPTS, async ($, on) => {
   mock.store(on)
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, {})
@@ -202,7 +202,7 @@ test('沒有任何畫面的 session（-p、腳本）不會啟用', OPTS, async (
   expect(await saved($)).toBe(null)
 })
 
-test('送出訊息時已有畫面就啟用，這一輪照樣入味', OPTS, async ($, on) => {
+test('Activates on prompt submit when a surface is attached, and that turn still adds flavor', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, {})

@@ -1,11 +1,11 @@
-// 防劇透外洩檢查。pre-commit、commit-msg 與手動執行共用。
+// Spoiler-leak check. Shared by pre-commit, commit-msg and manual runs.
 //
-// 用法：
-//   npm run check -- --staged      檢查暫存區（pre-commit）
-//   npm run check -- --msg FILE    檢查 commit 訊息（commit-msg）
-//   npm run check -- --all         檢查所有已追蹤檔案、歷史訊息、分支名
+// Usage:
+//   npm run check -- --staged      check the index (pre-commit)
+//   npm run check -- --msg FILE    check a commit message (commit-msg)
+//   npm run check -- --all         check all tracked files, history messages and branch names
 //
-// 禁止字詞來自本機的 spoilers.source.json（不在 repo 裡）；檔案不存在時只做檔名檢查。
+// Forbidden words come from the local spoilers.source.json (not in the repo); without it only file-name rules are checked.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -16,7 +16,7 @@ const SOURCE = join(ROOT, 'spoilers.source.json')
 const NEVER_TRACK = ['tea-egg-design.md', 'spoilers.source.json']
 const NEVER_TRACK_DIRS = ['art-source/', 'art-build/', 'docs/superpowers/', '.superpowers/', 'node_modules/']
 const NEVER_TRACK_EXT = ['.png']
-// 編碼後的劇透檔本身不掃（內容是 base64）
+// The encoded spoiler files themselves aren't scanned (their content is base64)
 const SKIP_CONTENT = ['hooks/spoilers.ts', 'hooks/sprites-hd.ts']
 const SCISSORS = '# ------------------------ >8'
 
@@ -26,7 +26,7 @@ function git(...args: string[]): Buffer {
   return execFileSync('git', args, { cwd: ROOT, maxBuffer: 256 * 1024 * 1024 })
 }
 
-// -z：路徑以 NUL 分隔且不做引號跳脫，中文檔名才比得到
+// -z: NUL-separated paths without quoting, so non-ASCII file names match
 function gitPaths(...args: string[]): string[] {
   return git(...args, '-z').toString('utf8').split('\0').filter(Boolean)
 }
@@ -40,18 +40,18 @@ function loadGuard(): Guard {
     try {
       patterns.push(new RegExp(p))
     } catch {
-      invalid.push(`第 ${i + 1} 個 pattern 無效`) // 不印 pattern 本身
+      invalid.push(`pattern #${i + 1} is invalid`) // never print the pattern itself
     }
   })
   return { words: (guard.words ?? []).map(w => w.toLowerCase()), patterns, invalid }
 }
 
-// 只印出字數，不印字詞本身，避免輸出被貼出去時洩漏
+// Print only the word length, never the word itself, so pasted output can't leak it
 function scanText(label: string, text: string, guard: Guard): string[] {
   const problems: string[] = []
   const low = text.toLowerCase()
-  for (const w of guard.words) if (low.includes(w)) problems.push(`${label}: 含禁止字詞（${[...w].length} 字）`)
-  for (const p of guard.patterns) if (p.test(text)) problems.push(`${label}: 含禁止日期格式`)
+  for (const w of guard.words) if (low.includes(w)) problems.push(`${label}: contains a forbidden word (${[...w].length} chars)`)
+  for (const p of guard.patterns) if (p.test(text)) problems.push(`${label}: contains a forbidden date format`)
   return problems
 }
 
@@ -67,12 +67,12 @@ function isBadPath(path: string): boolean {
 function checkFiles(paths: string[], read: (path: string) => Buffer, guard: Guard): string[] {
   const problems: string[] = []
   paths.forEach((path, i) => {
-    // 檔名本身含禁止字詞時，所有訊息都改用編號，避免把字詞印出來
-    const nameHits = scanText(`第 ${i + 1} 個檔案（檔名）`, path, guard)
-    const label = nameHits.length > 0 ? `第 ${i + 1} 個檔案` : path
+    // If the file name itself contains a forbidden word, refer to the file by number in every message so the word isn't printed
+    const nameHits = scanText(`file #${i + 1} (name)`, path, guard)
+    const label = nameHits.length > 0 ? `file #${i + 1}` : path
     problems.push(...nameHits)
     if (isBadPath(path)) {
-      problems.push(`${label}: 這個檔案不可進 repo`)
+      problems.push(`${label}: this file must never be committed`)
       return
     }
     if (SKIP_CONTENT.includes(path)) return
@@ -80,7 +80,7 @@ function checkFiles(paths: string[], read: (path: string) => Buffer, guard: Guar
     try {
       data = read(path)
     } catch {
-      problems.push(`${label}: 無法讀取，請手動確認`)
+      problems.push(`${label}: could not read it; please check manually`)
       return
     }
     if (data.subarray(0, 4096).includes(0)) return
@@ -89,7 +89,7 @@ function checkFiles(paths: string[], read: (path: string) => Buffer, guard: Guar
   return problems
 }
 
-// commit 訊息：去掉 # 註解行與 scissors 線之後的內容（git commit -v 的 diff）
+// Commit message: drop # comment lines and everything after the scissors line (the diff from git commit -v)
 function messageBody(text: string): string {
   const lines: string[] = []
   for (const line of text.split(/\r?\n/)) {
@@ -107,23 +107,23 @@ function main(argv: string[]): number {
     const paths = gitPaths('diff', '--cached', '--name-only', '--diff-filter=ACMR')
     problems = checkFiles(paths, p => git('show', `:${p}`), guard)
   } else if (mode === '--msg' && argv[1]) {
-    problems = scanText('commit 訊息', messageBody(readFileSync(argv[1], 'utf8')), guard)
+    problems = scanText('commit message', messageBody(readFileSync(argv[1], 'utf8')), guard)
   } else if (mode === '--all') {
     problems = checkFiles(gitPaths('ls-files'), p => readFileSync(join(ROOT, p)), guard)
-    problems.push(...scanText('commit 歷史訊息', git('log', '--all', '--format=%B').toString('utf8'), guard))
-    problems.push(...scanText('分支名稱', git('branch', '-a', '--format=%(refname)').toString('utf8'), guard))
+    problems.push(...scanText('commit history messages', git('log', '--all', '--format=%B').toString('utf8'), guard))
+    problems.push(...scanText('branch names', git('branch', '-a', '--format=%(refname)').toString('utf8'), guard))
   } else {
-    console.log('用法：npm run check -- --staged | --msg FILE | --all')
+    console.log('Usage: npm run check -- --staged | --msg FILE | --all')
     return 2
   }
   problems.push(...guard.invalid)
-  if (guard.words.length === 0) console.log('（提醒：找不到 spoilers.source.json，只檢查了檔名規則）')
+  if (guard.words.length === 0) console.log('(Note: spoilers.source.json not found; only file-name rules were checked)')
   for (const line of problems) console.log('✗', line)
   if (problems.length > 0) {
-    console.log('劇透檢查沒過：請修正後再 commit。')
+    console.log('Spoiler check failed: please fix it before committing.')
     return 1
   }
-  console.log('✓ 劇透檢查通過')
+  console.log('✓ Spoiler check passed')
   return 0
 }
 

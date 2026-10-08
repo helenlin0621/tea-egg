@@ -31,7 +31,7 @@ export function statsOf(egg: Egg, now: number): Stats {
   }
 }
 
-// 規則的種類與判斷方式公開可讀；門檻值與對應的蛋在 SPOILERS 裡
+// Rule kinds and how they're evaluated are public; thresholds and which egg each yields are in SPOILERS
 export function matches(rule: Rule, st: Stats, roll: number): boolean {
   switch (rule.when) {
     case 'cracked': return st.cracked
@@ -71,7 +71,7 @@ function harvest(s: Save, now: number, rng: () => number): Effect {
     ? fill(crackToast, { kw: keyword, name: info.name, icon: info.icon })
     : fill(TEXT.harvest, { name: info.name })
   const next = newEgg(s.egg.no + 1, now)
-  next.record.sessionCount = 1 // 目前這個 session 也算進新蛋
+  next.record.sessionCount = 1 // the current session counts toward the new egg too
   s.egg = next
   s.harvestedAt = now
   return { kind: 'toast', text: isNew ? text + TEXT.newDex : text }
@@ -91,8 +91,8 @@ export function crack(prev: Save, keyword: string, now: number, rng: () => numbe
   return settle({ save, effects: [] }, now, rng)
 }
 
-// 特殊日期模式的獎勵蛋：未收集時連圖示都藏起來。依「是不是獎勵」判斷，不依格子位置，
-// 之後新增蛋種（一般或特殊）排在哪一格都不會認錯
+// The special-date-mode prize egg hides even its icon until collected. Decided by "is it the prize", not by slot position,
+// so egg kinds added later (regular or special) can sit in any slot without being mistaken for it
 export function isPrizeEgg(id: string, sp: Spoilers = decodeSpoilers()): boolean {
   return id === sp.dateMode.prize
 }

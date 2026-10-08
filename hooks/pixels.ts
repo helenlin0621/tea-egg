@@ -8,7 +8,7 @@ const DEFAULT = 0x01000000
 
 export type Layer = { pixels: string; box?: readonly [number, number, number, number] }
 
-// 依序疊圖：後面的圖層在 box 範圍內覆蓋不透明像素（成長提示的疊加圖層也用這個）
+// Stack layers in order: later layers overwrite opaque pixels inside their box (growth-hint overlays use this too)
 export function compose(layers: readonly Layer[]): string {
   const out = (layers[0]?.pixels ?? '.'.repeat(SIZE * SIZE)).split('')
   for (const layer of layers.slice(1)) {
@@ -23,7 +23,7 @@ export function compose(layers: readonly Layer[]): string {
   return out.join('')
 }
 
-// 像素字元：'.' 透明；0–9、a–v 為調色盤索引（base-32）
+// Pixel chars: '.' is transparent; 0–9 and a–v are palette indices (base-32)
 function color(c: string | undefined, palette: readonly number[]): number | null {
   if (c === undefined || c === '.') return null
   return palette[parseInt(c, 32)] ?? null
@@ -35,7 +35,7 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(bin)
 }
 
-// 一格 = 上下兩個像素。上有色用 ▀（前景=上、背景=下）；只有下有色用 ▄；都透明用空白
+// One cell = two stacked pixels. Top colored: ▀ (fg = top, bg = bottom); only bottom colored: ▄; both transparent: space
 export function rasterCells(pixels: string, palette: readonly number[]): string {
   const view = new DataView(new ArrayBuffer(SIZE * RASTER_ROWS * 12))
   let o = 0
@@ -54,7 +54,7 @@ export function rasterCells(pixels: string, palette: readonly number[]): string 
 
 const hex = (n: number) => '#' + n.toString(16).padStart(6, '0')
 
-// background：在像素底下墊一張圓角底色卡（讓白色蒸氣在淺色主題也看得見）
+// background: put a rounded backing card under the pixels (so the white steam shows up on light themes)
 export function svgSource(pixels: string, palette: readonly number[], scale: number, background?: string): string {
   const rects: string[] = background ? [`<rect width="${SIZE}" height="${SIZE}" rx="3" fill="${background}"/>`] : []
   for (let y = 0; y < SIZE; y++) {

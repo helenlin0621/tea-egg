@@ -43,7 +43,7 @@ export function addActiveDay(s: Save, t: LocalTime): void {
   const days = s.egg.record.activeDays
   if (days.includes(t.date)) return
   const last = days[days.length - 1]
-  // 間隔 = 兩個活躍日之間沒開的天數（相鄰兩天 = 0）
+  // Gap = days not opened between two active days (consecutive days = 0)
   if (last !== undefined) s.egg.record.maxGapDays = Math.max(s.egg.record.maxGapDays, daysBetween(last, t.date) - 1)
   days.push(t.date)
 }
@@ -72,7 +72,7 @@ export function tick(prev: Save, now: number, t: LocalTime): Step {
   }
 
   if (now - s.clocks.bucketStart >= RULES.bucketMs) {
-    // 區間太久以前（session 中斷過）就不算
+    // Skip a bucket that started too long ago (the session was interrupted)
     const fresh = now - s.clocks.bucketStart < RULES.bucketMs + RULES.maxTickGapMs
     if (s.clocks.bucketActive && fresh) {
       gain(s, 1, t, true)

@@ -9,17 +9,17 @@ import { at, ms } from './helpers'
 
 const NOW = ms('2026-10-07', 14)
 
-test('terminal 夠寬時用 Raster，太窄退回 ASCII', async () => {
+test('Terminal uses Raster when wide enough and ASCII when too narrow', async () => {
   const s = newSave(NOW)
   expect(eggArt(s, at('2026-10-07', 14), NOW, 'terminal', 50).kind).toBe('raster')
   expect(eggArt(s, at('2026-10-07', 14), NOW, 'terminal', 40).kind).toBe('ascii')
 })
 
-test('desktop 用 SVG', async () => {
+test('Desktop uses SVG', async () => {
   expect(eggArt(newSave(NOW), at('2026-10-07', 14), NOW, 'desktop', 40).kind).toBe('svg')
 })
 
-test('開心用階段圖，其他表情用表情圖', async () => {
+test('Happy uses the stage sprite; other faces use face sprites', async () => {
   const s = newSave(NOW)
   const happy = eggLayers(s, at('2026-10-07', 14), NOW)
   expect(happy.length).toBe(1)
@@ -29,11 +29,11 @@ test('開心用階段圖，其他表情用表情圖', async () => {
   expect(dry[0]!.pixels).toBe(SPRITES.face_dry)
 })
 
-test('圖鑑圖缺素材時回 null', async () => {
+test('Dex art is null when the sprite is missing', async () => {
   expect(dexArt('nope-id', true, 'terminal')).toBeNull()
 })
 
-test('面板文字包含名字、數值條與提示', async () => {
+test('Panel text includes the name, stat bars and hint', async () => {
   const s = newSave(NOW)
   s.egg.broth = 20
   const lines = panelLines(s, at('2026-10-07', 14), NOW).join('\n')
@@ -44,7 +44,7 @@ test('面板文字包含名字、數值條與提示', async () => {
   expect(lines.includes('滷汁快乾了')).toBe(true)
 })
 
-test('ASCII 退路：每種表情放進外框後每列等寬', async () => {
+test('ASCII fallback: every face fits the frame with equal-width rows', async () => {
   const t = at('2026-10-07', 14)
   const cases: ((s: ReturnType<typeof newSave>) => [number, ReturnType<typeof at>])[] = [
     s => { s.egg.mood = 90; return [NOW, t] }, // happy
@@ -68,7 +68,7 @@ test('ASCII 退路：每種表情放進外框後每列等寬', async () => {
   }
 })
 
-test('ASCII 蛋：各階段每列等寬，且保留反斜線邊緣', async () => {
+test('ASCII egg: equal-width rows at every stage, with backslash edges kept', async () => {
   for (const stage of ASCII_EGG) {
     expect(new Set(stage.map(strWidth)).size).toBe(1)
   }
@@ -76,7 +76,7 @@ test('ASCII 蛋：各階段每列等寬，且保留反斜線邊緣', async () =>
   expect(ASCII_EGG[0]![3]!.includes('\\')).toBe(true)
 })
 
-test('desktop 有高解析圖時用 <image>，且每張 SVG 都在 131072 字元內', async () => {
+test('Desktop uses <image> when a high-res sprite exists, and every SVG stays under 131072 chars', async () => {
   const art = eggArt(newSave(NOW), at('2026-10-07', 14), NOW, 'desktop', 40)
   expect(art.kind).toBe('svg')
   if (art.kind === 'svg') expect(art.source.includes('<image')).toBe(true)
@@ -91,6 +91,6 @@ test('desktop 有高解析圖時用 <image>，且每張 SVG 都在 131072 字元
     const a = dexArt(id, true, 'desktop')
     expect(a?.kind === 'svg' && a.source.includes('<image') && a.source.length < 131072).toBe(true)
   }
-  // 公開圖：HD 字串兩份嵌入後的 SVG 長度
+  // Public sprites: SVG length with the HD string embedded twice
   for (const b64 of Object.values(SPRITES_HD)) expect(b64.length * 2 + 600).toBeLessThan(131072)
 })

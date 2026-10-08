@@ -8,7 +8,7 @@ const NOW = Date.UTC(2026, 9, 7)
 const noLuck = () => 0.99
 const lucky = () => 0
 
-// 每個案例只描述成長紀錄；預期的蛋用規則順序（index）表示，不寫明文名稱
+// Each case only describes the growth record; the expected egg is given by rule index, never by its plaintext name
 function egg(patch: Partial<ReturnType<typeof newEgg>['record']>) {
   const e = newEgg(1, NOW - 7 * DAY)
   e.record = { ...e.record, sessionCount: 10, sessionMinutes: 600, ...patch }
@@ -16,7 +16,7 @@ function egg(patch: Partial<ReturnType<typeof newEgg>['record']>) {
 }
 const ruleEgg = (i: number) => decodeSpoilers().rules[i]!.egg
 
-test('出鍋規則：八種結果各一例且順序正確', async () => {
+test('Harvest rules: one case for each of the eight outcomes, in the right order', async () => {
   expect(outcome(egg({ cracked: 'rm -rf', maxGapDays: 9 }), NOW, lucky)).toBe(ruleEgg(0))
   expect(outcome(egg({ maxGapDays: 9 }), NOW, lucky)).toBe(ruleEgg(1))
   expect(outcome(egg({ maxGapDays: 3, testRuns: 9, testFails: 9 }), NOW, noLuck)).toBe(ruleEgg(2))
@@ -27,16 +27,16 @@ test('出鍋規則：八種結果各一例且順序正確', async () => {
   expect(outcome(egg({}), NOW, noLuck)).toBe(ruleEgg(7))
 })
 
-test('邊界：失敗率剛好 50% 或測試不足 5 次不算', async () => {
+test('Edge: exactly 50% fail rate or fewer than 5 test runs does not count', async () => {
   expect(outcome(egg({ testRuns: 4, testFails: 4 }), NOW, noLuck)).toBe(ruleEgg(7))
   expect(outcome(egg({ testRuns: 6, testFails: 3 }), NOW, noLuck)).toBe(ruleEgg(7))
 })
 
-test('沒有任何 session 紀錄時不會被判成短 session', async () => {
+test('No session records is not judged as short sessions', async () => {
   expect(outcome(egg({ sessionCount: 0, sessionMinutes: 0 }), NOW, noLuck)).toBe(ruleEgg(7))
 })
 
-test('入味 50% 前沒有提示，之後依推測給提示（跳過前兩條）', async () => {
+test('No hint before 50% flavor; afterwards a hint from the predicted outcome (skipping the first two rules)', async () => {
   const e = egg({ maxGapDays: 5 })
   e.progress = 49
   expect(predictHint(e, NOW)).toBe(null)
@@ -44,7 +44,7 @@ test('入味 50% 前沒有提示，之後依推測給提示（跳過前兩條）
   expect(predictHint(e, NOW)).toBe(decodeSpoilers().hints[ruleEgg(2)]!)
 })
 
-test('入味到 100 出鍋：寫入圖鑑、首次有新圖鑑字樣、領下一顆', async () => {
+test('Harvest at 100: added to the dex, new-entry note the first time, next egg handed out', async () => {
   const s = newSave(NOW)
   s.egg.progress = 100
   const r = settle({ save: s, effects: [] }, NOW, noLuck)
@@ -56,21 +56,21 @@ test('入味到 100 出鍋：寫入圖鑑、首次有新圖鑑字樣、領下一
   expect(r.save.harvestedAt).toBe(NOW)
   expect(r.effects[0]!.text.includes(decodeSpoilers().eggs[id]!.name)).toBe(true)
   expect(r.effects[0]!.text.includes('新圖鑑')).toBe(true)
-  // 第二顆蛋：給它正常長度的 session，避免落到「平均 session 太短」那條規則
+  // Second egg: give it normal-length sessions so it doesn't hit the "average session too short" rule
   const second = { ...r.save.egg, progress: 100, record: { ...r.save.egg.record, sessionMinutes: 60 } }
   const again = settle({ save: { ...r.save, egg: second }, effects: [] }, NOW, noLuck)
   expect(again.save.dex[id]).toBe(2)
   expect(again.effects[0]!.text.includes('新圖鑑')).toBe(false)
 })
 
-test('危險指令立即破蛋，訊息顯示關鍵字', async () => {
+test('A dangerous command cracks the egg immediately and the message shows the keyword', async () => {
   const r = crack(newSave(NOW), 'git reset --hard', NOW, noLuck)
   expect(r.save.dex[ruleEgg(0)]).toBe(1)
   expect(r.effects[0]!.text.includes('git reset --hard')).toBe(true)
   expect(r.save.egg.no).toBe(2)
 })
 
-test('圖鑑文字：共 9 格，未獲得顯示 ???，第 9 格無提示', async () => {
+test('Dex text: 9 slots, missing ones show ???, slot 9 gives no hint', async () => {
   const s = newSave(NOW)
   s.dex = { [ruleEgg(7)]: 3 }
   const text = dexText(s, '蛋圖鑑')
@@ -80,11 +80,11 @@ test('圖鑑文字：共 9 格，未獲得顯示 ???，第 9 格無提示', asyn
   expect(text.split('???').length - 1).toBe(8)
 })
 
-test('圖鑑：獎勵蛋不論排在第幾格，未收集時都藏起圖示', async () => {
+test('Dex: the prize egg hides its icon until collected, whatever its slot', async () => {
   const sp = structuredClone(decodeSpoilers())
   const prize = sp.dateMode.prize
   const others = sp.dexSlots.filter(id => id !== prize)
-  // 獎勵蛋移到最前面，最後面再接一顆新的一般蛋
+  // Move the prize egg to the front and append a new regular egg at the end
   sp.eggs.newcomer = { name: '新蛋', icon: '🆕' }
   sp.dexSlots = [prize, ...others, 'newcomer']
   const text = dexText(newSave(NOW), '蛋圖鑑', sp)

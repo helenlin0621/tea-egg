@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 import { decodeSpoilers } from '../hooks/spoilers'
 
-test('劇透資料能解碼且結構完整', async () => {
+test('Spoiler data decodes with a complete structure', async () => {
   const s = decodeSpoilers()
   expect(s.rules.length).toBe(8)
   expect(s.rules[0]!.when).toBe('cracked')
@@ -12,6 +12,6 @@ test('劇透資料能解碼且結構完整', async () => {
   for (const id of s.dexSlots) expect(s.eggs[id]).toBeDefined()
 })
 
-test('解碼結果有快取', async () => {
+test('The decoded result is cached', async () => {
   expect(decodeSpoilers()).toBe(decodeSpoilers())
 })

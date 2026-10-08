@@ -10,20 +10,20 @@ const dm = () => decodeSpoilers().dateMode
 const pad = (n: number) => String(n).padStart(2, '0')
 const special = (hour = 10): LocalTime => at(`2027-${pad(dm().month)}-${pad(dm().day)}`, hour)
 
-test('第一次開啟時歡迎一次', async () => {
+test('Welcome only on the first open', async () => {
   const a = onSessionOpen(newSave(1), 1, at('2026-10-07'), true)
   expect(a.effects[0]!.text.startsWith('🥚 你領到了第一顆蛋')).toBe(true)
   expect(onSessionOpen(a.save, 2, at('2026-10-07'), true).effects.length).toBe(0)
 })
 
-test('同一個 session 重新載入時不重複計算 session 次數', async () => {
+test('Reloading the same session does not count the session twice', async () => {
   const a = onSessionOpen(newSave(1), 1, at('2026-10-07'), true).save
   const b = onSessionOpen(a, 2, at('2026-10-07'), false).save
   expect(b.egg.record.sessionCount).toBe(1)
   expect(b.egg.record.activeDays).toEqual(['2026-10-07'])
 })
 
-test('開啟 session 時重設活動區間', async () => {
+test('Opening a session resets the active bucket', async () => {
   const s = newSave(1)
   s.clocks.bucketStart = 1
   s.clocks.bucketActive = true
@@ -32,7 +32,7 @@ test('開啟 session 時重設活動區間', async () => {
   expect(r.clocks.bucketActive).toBe(false)
 })
 
-test('turn 讓入味到 100 時出鍋', async () => {
+test('A turn that brings flavor to 100 harvests the egg', async () => {
   const s = newSave(ms('2026-10-07'))
   s.egg.progress = 99
   const r = onTurn(s, ms('2026-10-07'), at('2026-10-07'), never)
@@ -40,12 +40,12 @@ test('turn 讓入味到 100 時出鍋', async () => {
   expect(r.effects.some(f => f.text.startsWith('🎉 出鍋了'))).toBe(true)
 })
 
-test('危險指令讓蛋破掉', async () => {
+test('A dangerous command cracks the egg', async () => {
   const r = onObserved(newSave(1), 1, at('2026-10-07'), { failed: false, test: null, danger: 'rm -rf' }, never)
   expect(r.save.dex[decodeSpoilers().rules[0]!.egg]).toBe(1)
 })
 
-test('特殊日期模式：原本的蛋數值完全不變', async () => {
+test('Special-date mode: the real egg stats stay exactly the same', async () => {
   const s = newSave(ms('2026-10-07'))
   s.egg.progress = 40
   s.egg.broth = 50
@@ -56,13 +56,13 @@ test('特殊日期模式：原本的蛋數值完全不變', async () => {
   expect(x.egg).toEqual(s.egg)
 })
 
-test('特殊日期模式：指令回覆變調、圖鑑標題改變', async () => {
+test('Special-date mode: command replies and the dex title change', async () => {
   expect(onCommand(newSave(1), 1, special(), 'refill', never).reply).toBe(dm().replies.refill)
   expect(onCommand(newSave(1), 1, special(), 'flip', never).reply).toBe(dm().replies.flip)
   expect(onCommand(newSave(1), 1, special(), 'dex', never).reply!.includes(dm().dexTitle)).toBe(true)
 })
 
-test('特殊日期隔天自動恢復，蛋從暫停處繼續', async () => {
+test('The day after the special date it resumes automatically from where the egg paused', async () => {
   const s = newSave(ms('2026-10-07'))
   s.egg.progress = 40
   const next = at(`2027-${pad(dm().month)}-${pad(dm().day + 1)}`)
@@ -70,7 +70,7 @@ test('特殊日期隔天自動恢復，蛋從暫停處繼續', async () => {
   expect(r.save.egg.progress).toBe(41)
 })
 
-test('一般指令', async () => {
+test('Regular commands', async () => {
   const s = newSave(1)
   expect(onCommand(s, 1, at('2026-10-07'), 'refill', never).save.egg.broth).toBe(100)
   expect(onCommand(s, 1, at('2026-10-07'), 'name 阿滷', never).save.egg.name).toBe('阿滷')

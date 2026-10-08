@@ -6,30 +6,30 @@ import { at, ms } from './helpers'
 const NOW = ms('2026-10-07', 14)
 const text = (segs: { text: string }[]) => segs.map(s => s.text).join('')
 
-test('字寬：中文與全形 2 格、組合字元 0 格', async () => {
+test('Width: CJK and full-width take 2 columns, combining marks 0', async () => {
   expect(strWidth('abc')).toBe(3)
   expect(strWidth('入味')).toBe(4)
   expect(strWidth('｜')).toBe(2)
   expect(strWidth('(•̀ᴗ•́)')).toBe(5)
 })
 
-test('截斷依字寬', async () => {
+test('Truncation by display width', async () => {
   expect(truncate('茶葉蛋養成', 7)).toBe('茶葉蛋…')
   expect(strWidth(truncate('茶葉蛋養成', 7)) <= 7).toBe(true)
   expect(truncate('abc', 5)).toBe('abc')
 })
 
-test('進度條', async () => {
+test('Progress bar', async () => {
   expect(bar(62, 10)).toBe('██████░░░░')
   expect(bar(0, 5)).toBe('░░░░░')
   expect(bar(100, 5)).toBe('█████')
 })
 
-test('入味階段', async () => {
+test('Flavor stages', async () => {
   expect([0, 19, 20, 39, 40, 69, 70, 99].map(stageOf)).toEqual([0, 0, 1, 1, 2, 2, 3, 3])
 })
 
-test('表情優先順序：剛出鍋 > 深夜 > 滷汁乾 > 想翻身 > 心情', async () => {
+test('Face priority: just harvested > late night > broth dry > wants a flip > mood', async () => {
   const s = newSave(NOW)
   expect(faceOf(s, at('2026-10-07', 14), NOW)).toBe('happy')
   s.egg.mood = 50
@@ -45,7 +45,7 @@ test('表情優先順序：剛出鍋 > 深夜 > 滷汁乾 > 想翻身 > 心情',
   expect(faceOf(s, at('2026-10-07', 2), NOW)).toBe('done')
 })
 
-test('橫條內容', async () => {
+test('Band content', async () => {
   const s = newSave(NOW)
   s.egg.progress = 62
   s.egg.broth = 60
@@ -56,13 +56,13 @@ test('橫條內容', async () => {
   expect(line.includes('滷汁 ███░░')).toBe(true)
 })
 
-test('滷汁低於 30 時顯示提示', async () => {
+test('Hint shown when broth is below 30', async () => {
   const s = newSave(NOW)
   s.egg.broth = 20
   expect(text(bandSegments(s, at('2026-10-07', 14), NOW)).includes('滷汁快乾了')).toBe(true)
 })
 
-test('寬度不夠時從右邊丟掉整段，結果不超過寬度', async () => {
+test('When too narrow, whole segments drop from the right and the result fits', async () => {
   const s = newSave(NOW)
   s.egg.progress = 62
   for (const cols of [10, 20, 40, 80]) {
