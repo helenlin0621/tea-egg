@@ -73,6 +73,7 @@ function harvest(s: Save, now: number, rng: () => number): Effect {
   const next = newEgg(s.egg.no + 1, now)
   next.record.sessionCount = 1 // the current session counts toward the new egg too
   s.egg = next
+  s.daily.gained = 0 // the daily cap is per egg: a new egg gets a fresh cap even if the last one used today's up
   s.harvestedAt = now
   return { kind: 'toast', text: isNew ? text + T().newDex : text }
 }

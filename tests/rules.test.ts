@@ -2,6 +2,8 @@ import { test, expect } from 'claude-code/testing'
 import { decodeSpoilers } from '../hooks/spoilers'
 import { crack, dexText, outcome, predictHint, settle } from '../hooks/rules'
 import { newSave, newEgg } from '../hooks/model'
+import { RULES, turnDone } from '../hooks/engine'
+import { at } from './helpers'
 
 const DAY = 86_400_000
 const NOW = Date.UTC(2026, 9, 7)
@@ -92,4 +94,13 @@ test('Dex: the prize egg hides its icon until collected, whatever its slot', asy
   expect(text).toContain('🆕 ???')
   expect(text).not.toContain(`${sp.eggs[prize]!.icon} ???`)
   expect(text.split('❓ ???').length - 1).toBe(1)
+})
+
+test('A new egg starts with a fresh daily flavor cap, even after the previous egg used it up today', async () => {
+  const s = newSave(NOW)
+  s.daily = { date: at('2026-10-07').date, gained: RULES.dailyCap }
+  const r = crack(s, 'rm -rf', NOW, noLuck)
+  expect(r.save.egg.no).toBe(2)
+  const next = turnDone(r.save, NOW, at('2026-10-07'), noLuck)
+  expect(next.save.egg.progress).toBe(1)
 })
