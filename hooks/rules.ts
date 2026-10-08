@@ -3,7 +3,7 @@ import { newEgg } from './model'
 import type { Effect, Step } from './engine'
 import { decodeSpoilers } from './spoilers'
 import type { Rule, Spoilers } from './spoiler-types'
-import { TEXT, fill } from './text'
+import { T, fill } from './text'
 
 const DAY = 86_400_000
 const HINT_FROM = 50
@@ -69,12 +69,12 @@ function harvest(s: Save, now: number, rng: () => number): Effect {
   const keyword = s.egg.record.cracked
   const text = keyword !== null
     ? fill(crackToast, { kw: keyword, name: info.name, icon: info.icon })
-    : fill(TEXT.harvest, { name: info.name })
+    : fill(T().harvest, { name: info.name })
   const next = newEgg(s.egg.no + 1, now)
   next.record.sessionCount = 1 // the current session counts toward the new egg too
   s.egg = next
   s.harvestedAt = now
-  return { kind: 'toast', text: isNew ? text + TEXT.newDex : text }
+  return { kind: 'toast', text: isNew ? text + T().newDex : text }
 }
 
 export function settle(step: Step, now: number, rng: () => number): Step {

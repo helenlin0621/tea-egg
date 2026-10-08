@@ -1,6 +1,8 @@
 import { test, expect, mock } from 'claude-code/testing'
 
 const START = { cwd: '.', surface: 'terminal', isInteractive: true } as const
+// Pin the language so the zh-TW expectations hold whatever the system locale
+const ZH = { TEA_EGG_LANG: 'zh-TW' }
 const PROPS = {
   hasSurvey: false,
   isWorking: false,
@@ -13,7 +15,7 @@ const PROPS = {
 test('The band renders on both terminal and desktop', async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 6) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.toast', () => ({ value: undefined }))

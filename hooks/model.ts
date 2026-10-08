@@ -1,9 +1,9 @@
 import type { Egg, EggRecord, Save } from '../types'
+import { T } from './text'
 
 export const STORE_KEY = 'tea-egg/v1'
 // Used instead while TEA_EGG_FAKE_DATE is in effect, so fake test dates never touch the real egg
 export const FAKE_STORE_KEY = 'tea-egg/v1-fake'
-export const DEFAULT_NAME = '小蛋'
 
 export function newRecord(now: number): EggRecord {
   return {
@@ -21,7 +21,7 @@ export function newRecord(now: number): EggRecord {
 export function newEgg(no: number, now: number): Egg {
   return {
     no,
-    name: DEFAULT_NAME,
+    name: T().defaultName, // picked in the current language; existing saves keep their name
     progress: 0,
     broth: 100,
     mood: 70,

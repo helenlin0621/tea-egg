@@ -3,6 +3,8 @@ import { decodeSpoilers } from '../hooks/spoilers'
 import { STORE_KEY, newSave } from '../hooks/model'
 
 const START = { cwd: '.', surface: 'terminal', isInteractive: true } as const
+// Pin the language so the zh-TW expectations hold whatever the system locale
+const ZH = { TEA_EGG_LANG: 'zh-TW' }
 // There's no core under the plugin: tests must answer the wired events themselves
 function base(on: Parameters<Parameters<typeof test>[1]>[1]): void {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -34,7 +36,7 @@ type SaveValue = {
 test('Observing Bash: the result is returned unchanged and not blocked', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   on('tool.call', { tool: 'Bash' }, () => BASH_OK)
   await $.session.start(START)
@@ -47,7 +49,7 @@ test('Observing Bash: the result is returned unchanged and not blocked', OPTS, a
 test('A dangerous command harvests the egg immediately', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   on('tool.call', { tool: 'Bash' }, () => BASH_OK)
   await $.session.start(START)
@@ -59,7 +61,7 @@ test('A dangerous command harvests the egg immediately', OPTS, async ($, on) => 
 test('Subagent turns do not add flavor', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   await $.session.start(START)
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', agentId: 'a1', reason: 'answer' })
@@ -71,7 +73,7 @@ test('Subagent turns do not add flavor', OPTS, async ($, on) => {
 test('Re-firing session.start does not count the session twice', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   await $.session.start(START)
   await $.session.start(START)
@@ -81,7 +83,7 @@ test('Re-firing session.start does not count the session twice', OPTS, async ($,
 test('Non-interactive sessions do not take part', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   on('tool.call', { tool: 'Bash' }, () => BASH_OK)
   await $.session.start({ cwd: '.', surface: null, isInteractive: false })
@@ -100,7 +102,7 @@ const ATTACH = { surface: 'desktop', clientId: 'c1' } as const
 test('Desktop: no surface at start; activates only after attach', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   on('session.attach', (_, e) => ({ clientId: e.clientId }))
   await $.session.start(HEADLESS)
@@ -116,7 +118,7 @@ test('Desktop: no surface at start; activates only after attach', OPTS, async ($
 test('Attaching twice does not count the session twice', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   on('session.attach', (_, e) => ({ clientId: e.clientId }))
   await $.session.start(HEADLESS)
@@ -131,7 +133,7 @@ test('A fake date never touches the real save', OPTS, async ($, on) => {
   mock.store(on, { [STORE_KEY]: real })
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   const dm = decodeSpoilers().dateMode
-  mock.env(on, { TEA_EGG_FAKE_DATE: `2026-${String((dm.month % 12) + 1).padStart(2, '0')}-15` }) // not the special date
+  mock.env(on, { ...ZH, TEA_EGG_FAKE_DATE: `2026-${String((dm.month % 12) + 1).padStart(2, '0')}-15` }) // not the special date
   base(on)
   await $.session.start(START)
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
@@ -143,7 +145,7 @@ test('Without a fake date the real save is read and written', OPTS, async ($, on
   real.egg.progress = 42
   mock.store(on, { [STORE_KEY]: real })
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   await $.session.start(START)
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
@@ -153,7 +155,7 @@ test('Without a fake date the real save is read and written', OPTS, async ($, on
 test('/egg subcommands reply', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   await $.session.start(START)
   const r = await $.command.run({ command: 'egg', args: 'refill' })
@@ -165,7 +167,7 @@ test('Special-date mode: the fake-date env var takes effect; the real egg is unt
   const pad = (n: number) => String(n).padStart(2, '0')
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, { TEA_EGG_FAKE_DATE: `2027-${pad(dm.month)}-${pad(dm.day)}T10:00` })
+  mock.env(on, { ...ZH, TEA_EGG_FAKE_DATE: `2027-${pad(dm.month)}-${pad(dm.day)}T10:00` })
   base(on)
   await $.session.start(START)
   const before = (await saved($)).egg
@@ -180,7 +182,7 @@ const SDK_START = { cwd: '.', surface: null, isInteractive: false } as const
 test('Desktop: no surface at start; activates automatically when one attaches a few seconds later', OPTS, async ($, on) => {
   mock.store(on)
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   let surfaces: string[] = []
   on('session.surfaces', () => ({ value: surfaces }) as never)
@@ -194,7 +196,7 @@ test('Desktop: no surface at start; activates automatically when one attaches a 
 test('Sessions with no surface at all (-p, scripts) never activate', OPTS, async ($, on) => {
   mock.store(on)
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   on('session.surfaces', () => ({ value: [] }) as never)
   await $.session.start(SDK_START)
@@ -205,7 +207,7 @@ test('Sessions with no surface at all (-p, scripts) never activate', OPTS, async
 test('Activates on prompt submit when a surface is attached, and that turn still adds flavor', OPTS, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
-  mock.env(on, {})
+  mock.env(on, ZH)
   base(on)
   let surfaces: string[] = []
   on('session.surfaces', () => ({ value: surfaces }) as never)

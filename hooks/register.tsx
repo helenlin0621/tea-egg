@@ -7,9 +7,10 @@ import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, 
 import { dexText } from './rules'
 import { decodeSpoilers } from './spoilers'
 import { mutate, type StoreIo } from './store'
-import { TEXT } from './text'
+import { detectLang, setLang } from './i18n'
+import { T, fill } from './text'
 import { RASTER_ROWS, SIZE } from './pixels'
-import { bandSegments, fitSegments } from './view'
+import { bandSegments, fitSegments, strWidth } from './view'
 
 // state refs' plugin / key must be literals, written in this file (the one that uses $.state)
 const SAVE_REF = { plugin: 'tea-egg', key: 'save' } as const
@@ -27,6 +28,12 @@ export const localNow = (now: number): LocalTime => localTime(now, clock)
 let interactive = false
 // Read and write a separate save while a fake date is in effect
 const storeKey = () => (clock.fake ? FAKE_STORE_KEY : STORE_KEY)
+
+// "Preview n/total: label" in the current language
+function previewText(template: string, key: string): string {
+  const n = PREVIEW_KEYS.indexOf(key as (typeof PREVIEW_KEYS)[number]) + 1
+  return fill(template, { n: String(n), total: String(PREVIEW_KEYS.length), label: PREVIEW_LABELS[key] ?? key })
+}
 
 function commandOf(e: { tool: string }): string {
   const command = (e as { command?: unknown }).command
@@ -52,7 +59,7 @@ async function togglePane($: EngineInterface): Promise<boolean> {
     await $.ui.close({ id: PANE })
     return false
   }
-  await $.ui.open({ id: PANE, title: '茶葉蛋養成計畫' })
+  await $.ui.open({ id: PANE, title: T().title })
   return true
 }
 
@@ -98,6 +105,8 @@ async function activate($: EngineInterface): Promise<void> {
   if (interactive) return
   interactive = true
   try {
+    // Also decided here in case this load never saw session.start
+    setLang(detectLang(await $.env.get('TEA_EGG_LANG')))
     const now = await $.clock.now()
     clock = {
       offsetMinutes: systemOffset,
@@ -119,7 +128,9 @@ async function activate($: EngineInterface): Promise<void> {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'egg', description: '茶葉蛋養成計畫：/egg [refill|flip|dex|name 名字|help]' })
+      // Pick the language first: the command description below is already localized
+      setLang(detectLang(await $.env.get('TEA_EGG_LANG')))
+      await $.command.register({ name: 'egg', description: T().commandDescription })
       // Activate only if someone is watching: an interactive session, or a surface already attached (a desktop hot reload sends no new attach)
       const seen = e.isInteractive === true || (await hasSurface($))
       if (seen) await activate($)
@@ -187,8 +198,9 @@ export const register: Register = on => {
       if (!save) return next(e)
       const now = await $.clock.now()
       const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
-      // Reserve 6 columns on the right for the panel button (1 space + 2 full-width chars + margin)
-      const segs = fitSegments(bandSegments(save, localNow(now), now), Math.max(10, columns - 6))
+      // Reserve room on the right for the panel button (1 space + its label + 1 column of margin)
+      const reserve = strWidth(T().buttons.panel) + 2
+      const segs = fitSegments(bandSegments(save, localNow(now), now), Math.max(10, columns - reserve))
       const { Box, Text, Button } = $.ui.resolve(e)
       const onPanel = async () => {
         try {
@@ -203,7 +215,7 @@ export const register: Register = on => {
             <Text key={String(i)} color={seg.color} dimColor={seg.dim}>{seg.text}</Text>
           ))}
           <Text key="gap"> </Text>
-          <Button key="panel" label="面板" plain dimColor onPress={onPanel} />
+          <Button key="panel" label={T().buttons.panel} plain dimColor onPress={onPanel} />
         </Box>
       )
     } catch {
@@ -216,7 +228,7 @@ export const register: Register = on => {
       const { Box, Text, Button } = $.ui.resolve(e)
       const save = (await $.state.get(SAVE_REF)).value
       const showDex = (await $.state.get(SHOW_DEX_REF)).value === true
-      if (!save) return <Text dimColor>蛋還在路上…</Text>
+      if (!save) return <Text dimColor>{T().waiting}</Text>
       const now = await $.clock.now()
       const t = localNow(now)
       const columns = e.props.bodyColumns ?? e.viewport?.columns ?? SIZE
@@ -229,7 +241,7 @@ export const register: Register = on => {
         }
         if (art.kind === 'svg' && e.surface !== 'terminal') {
           const { Svg } = $.ui.resolve(e)
-          return <Svg key={key} source={art.source} alt="茶葉蛋" width={SVG_PX} height={SVG_PX} />
+          return <Svg key={key} source={art.source} alt={T().eggAlt} width={SVG_PX} height={SVG_PX} />
         }
         return art.kind === 'ascii' ? (
           <Box key={key} flexDirection="column">{art.lines.map((l, i) => <Text key={String(i)}>{l}</Text>)}</Box>
@@ -250,15 +262,15 @@ export const register: Register = on => {
         <Box flexDirection="column">
           {preview !== null && (
             <Text key="preview" dimColor>
-              預覽 {PREVIEW_KEYS.indexOf(preview as (typeof PREVIEW_KEYS)[number]) + 1}/{PREVIEW_KEYS.length}：{PREVIEW_LABELS[preview] ?? preview}（不影響存檔）
+              {previewText(T().previewBanner, preview)}
             </Text>
           )}
           {draw(art, 'egg')}
           {panelLines(save, t, now).map((line, i) => <Text key={String(i)}>{line}</Text>)}
           <Box>
-            <Button key="refill" label="加滷汁" onPress={press('refill')} />
-            <Button key="flip" label="翻面" onPress={press('flip')} />
-            <Button key="dex" label="圖鑑" onPress={() => update($, SHOW_DEX_REF, v => !v)} />
+            <Button key="refill" label={T().buttons.refill} onPress={press('refill')} />
+            <Button key="flip" label={T().buttons.flip} onPress={press('flip')} />
+            <Button key="dex" label={T().buttons.dex} onPress={() => update($, SHOW_DEX_REF, v => !v)} />
           </Box>
           {showDex && <Text>{dexText(save, dexTitle(t))}</Text>}
           {showDex && (
@@ -277,24 +289,23 @@ export const register: Register = on => {
     try {
       // Someone typed /egg by hand, so someone is watching (on desktop the attach signal may come before the Mod loads and be missed)
       if (!interactive && e.origin.kind !== 'plugin') await activate($)
-      if (!interactive) return { text: TEXT.help }
+      if (!interactive) return { text: T().help }
       const args = e.args.trim()
-      if (args === '') return { text: (await togglePane($)) ? TEXT.paneOpened : TEXT.paneClosed }
+      if (args === '') return { text: (await togglePane($)) ? T().paneOpened : T().paneClosed }
       // Dev preview: only switches the displayed sprite; never reads or changes the save
       if (args === 'preview' || args.startsWith('preview ')) {
         const current = (await $.state.get(PREVIEW_REF)).value ?? null
         const chosen = nextPreview(current, args.slice('preview'.length))
-        if (chosen === undefined) return { text: `用法：/egg preview [1-${PREVIEW_KEYS.length}|off]` }
+        if (chosen === undefined) return { text: fill(T().previewUsage, { total: String(PREVIEW_KEYS.length) }) }
         await $.state.set(PREVIEW_REF, chosen)
-        if (chosen === null) return { text: '已結束預覽' }
-        if (!(await $.ui.panes()).some(p => p.id === PANE)) await $.ui.open({ id: PANE, title: '茶葉蛋養成計畫' })
-        const n = PREVIEW_KEYS.indexOf(chosen as (typeof PREVIEW_KEYS)[number]) + 1
-        return { text: `預覽 ${n}/${PREVIEW_KEYS.length}：${PREVIEW_LABELS[chosen]}（/egg preview 下一張、/egg preview off 結束）` }
+        if (chosen === null) return { text: T().previewOff }
+        if (!(await $.ui.panes()).some(p => p.id === PANE)) await $.ui.open({ id: PANE, title: T().title })
+        return { text: previewText(T().previewReply, chosen) }
       }
       const step = await mutate(ioOf($), (s, at) => onCommand(s, at, localNow(at), args, rng))
       return { text: step.reply ?? '' }
     } catch {
-      return { text: TEXT.error }
+      return { text: T().error }
     }
   })
 }

@@ -4,7 +4,8 @@ import { compose, rasterCells, svgSource, SIZE, type Layer } from './pixels'
 import { decodeSpoilers } from './spoilers'
 import { FACE_BOX, PALETTE, SPRITES } from './sprites'
 import { SPRITES_HD } from './sprites-hd'
-import { FACE_TEXT, STAGE_NAME, bar, faceOf, hintOf, stageOf, strWidth } from './view'
+import { T } from './text'
+import { FACE_TEXT, bar, faceOf, hintOf, stageOf, strWidth } from './view'
 
 // The bigger the pixel art, the coarser it looks; 3x (144px) looks the most refined
 const SVG_SCALE = 3
@@ -76,7 +77,7 @@ export function eggArt(s: Save, t: LocalTime, now: number, surface: string, colu
     const stage = stageOf(s.egg.progress)
     // Only a 4-column face goes inside the frame (parentheses removed) to keep alignment
     const face = fitWidth(FACE_TEXT[faceOf(s, t, now)].replace(/[()]/g, ''), FACE_COLS)
-    return { kind: 'ascii', lines: [...ASCII_EGG[stage]!.map(l => l.replace('FACE', face)), `   ${STAGE_NAME[stage]}`] }
+    return { kind: 'ascii', lines: [...ASCII_EGG[stage]!.map(l => l.replace('FACE', face)), `   ${T().stageNames[stage]}`] }
   }
   if (surface !== 'terminal') {
     const hd = hdArt(SPRITES_HD[eggSpriteKey(s, t, now)])
@@ -91,19 +92,11 @@ export const PREVIEW_KEYS = [
   'face_happy', 'face_normal', 'face_bored', 'face_dry', 'face_sleep', 'face_flip', 'face_done',
 ] as const
 
-export const PREVIEW_LABELS: Record<string, string> = {
-  stage0: '入味 0–19%（生蛋）',
-  stage1: '入味 20–39%（裂紋）',
-  stage2: '入味 40–69%（淺杏）',
-  stage3: '入味 70% 以上（淺褐）',
-  face_happy: '表情：開心',
-  face_normal: '表情：普通',
-  face_bored: '表情：無聊',
-  face_dry: '表情：滷汁乾了',
-  face_sleep: '表情：睡覺',
-  face_flip: '表情：想翻身',
-  face_done: '表情：剛出鍋',
-}
+// Each label is read in the current language when accessed
+export const PREVIEW_LABELS: Readonly<Record<string, string>> = Object.defineProperties(
+  {},
+  Object.fromEntries(PREVIEW_KEYS.map(key => [key, { enumerable: true, get: () => T().previewLabels[key] }])),
+)
 
 // Pick the preview from the command argument: empty = next, number = nth (1-based), or a sprite name; off = stop
 export function nextPreview(current: string | null, arg: string): string | null | undefined {
@@ -144,9 +137,9 @@ export function panelLines(s: Save, t: LocalTime, now: number): string[] {
   const hint = hintOf(s, now)
   return [
     `${s.egg.name} #${s.egg.no}  ${FACE_TEXT[faceOf(s, t, now)]}`,
-    `入味 ${bar(s.egg.progress, 10)} ${Math.floor(s.egg.progress)}%`,
-    `滷汁 ${bar(s.egg.broth, 10)} ${Math.round(s.egg.broth)}`,
-    `心情 ${bar(s.egg.mood, 10)} ${Math.round(s.egg.mood)}`,
+    `${T().flavor} ${bar(s.egg.progress, 10)} ${Math.floor(s.egg.progress)}%`,
+    `${T().broth} ${bar(s.egg.broth, 10)} ${Math.round(s.egg.broth)}`,
+    `${T().mood} ${bar(s.egg.mood, 10)} ${Math.round(s.egg.mood)}`,
     ...(hint ? [hint] : []),
   ]
 }

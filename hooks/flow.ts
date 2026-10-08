@@ -5,7 +5,7 @@ import type { Observation } from './detect'
 import { addActiveDay, flip, pauseClocks, refill, testObserved, tick, toolFailed, turnDone, type Step } from './engine'
 import { crack, dexText, settle } from './rules'
 import { decodeSpoilers } from './spoilers'
-import { TEXT, fill } from './text'
+import { T, fill } from './text'
 
 const NAME_MAX = 12
 
@@ -16,7 +16,7 @@ function then(first: Step, second: (s: Save) => Step): Step {
 }
 
 export function dexTitle(t: LocalTime): string {
-  return isSpecialDay(t) ? decodeSpoilers().dateMode.dexTitle : '蛋圖鑑'
+  return isSpecialDay(t) ? decodeSpoilers().dateMode.dexTitle : T().dexTitle
 }
 
 export function onSessionOpen(prev: Save, now: number, t: LocalTime, isNewSession: boolean): Step {
@@ -24,7 +24,7 @@ export function onSessionOpen(prev: Save, now: number, t: LocalTime, isNewSessio
   const step: Step = { save, effects: [] }
   if (!save.welcomed) {
     save.welcomed = true
-    step.effects.push({ kind: 'toast', text: TEXT.welcome })
+    step.effects.push({ kind: 'toast', text: T().welcome })
   }
   save.clocks.lastTickAt = now // no catching up on time while closed
   save.clocks.bucketStart = now
@@ -73,15 +73,15 @@ export function onCommand(prev: Save, now: number, t: LocalTime, args: string, r
     case 'dex':
       return { save: prev, effects: [], reply: dexText(prev, dexTitle(t)) }
     case 'help':
-      return { save: prev, effects: [], reply: TEXT.help }
+      return { save: prev, effects: [], reply: T().help }
     case 'name': {
       const name = rest.join(' ').trim()
-      if (name === '' || [...name].length > NAME_MAX) return { save: prev, effects: [], reply: TEXT.nameUsage }
+      if (name === '' || [...name].length > NAME_MAX) return { save: prev, effects: [], reply: T().nameUsage }
       const save = structuredClone(prev)
       save.egg.name = name
-      return { save, effects: [], reply: fill(TEXT.nameReply, { name }) }
+      return { save, effects: [], reply: fill(T().nameReply, { name }) }
     }
     default:
-      return { save: prev, effects: [], reply: TEXT.unknown }
+      return { save: prev, effects: [], reply: T().unknown }
   }
 }

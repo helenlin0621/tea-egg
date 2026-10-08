@@ -20,14 +20,19 @@ const HEADER = `// Unlock conditions and easter-egg content are base64-encoded s
 `
 
 const FOOTER = `
-let cache: Spoilers | null = null
+let raw: Spoilers | null = null
+const cache: Partial<Record<Lang, Spoilers>> = {}
 
-export function decodeSpoilers(): Spoilers {
-  if (cache === null) {
+// The spoilers in one language (the current UI language by default), each language cached separately
+export function decodeSpoilers(l: Lang = lang()): Spoilers {
+  const hit = cache[l]
+  if (hit) return hit
+  if (raw === null) {
     const bytes = Uint8Array.from(atob(SPOILERS), c => c.charCodeAt(0))
-    cache = JSON.parse(new TextDecoder().decode(bytes)) as Spoilers
+    raw = JSON.parse(new TextDecoder().decode(bytes)) as Spoilers
   }
-  return cache
+  const { i18n, ...base } = raw
+  return (cache[l] = overlay(base, i18n?.[l]))
 }
 `
 
@@ -55,7 +60,8 @@ function render(data: Record<string, unknown>): string {
   const b64 = Buffer.from(JSON.stringify(sortDeep(data)), 'utf8').toString('base64')
   const chunks: string[] = []
   for (let i = 0; i < b64.length; i += LINE) chunks.push(`"${b64.slice(i, i + LINE)}"`)
-  return HEADER + "import type { Spoilers } from './spoiler-types'\n\n" + `export const SPOILERS =\n  ${chunks.join(' +\n  ')}\n` + FOOTER
+  const imports = "import { lang, overlay, type Lang } from './i18n'\nimport type { Spoilers } from './spoiler-types'\n\n"
+  return HEADER + imports +`export const SPOILERS =\n  ${chunks.join(' +\n  ')}\n` + FOOTER
 }
 
 function main(argv: string[]): number {

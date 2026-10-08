@@ -1,6 +1,6 @@
 import type { Save } from '../types'
 import { daysBetween, type LocalTime } from './clock'
-import { TEXT, pick } from './text'
+import { T, pick } from './text'
 
 export type Effect = { kind: 'toast'; text: string }
 export type Step = { save: Save; effects: Effect[]; reply?: string }
@@ -62,7 +62,7 @@ export function tick(prev: Save, now: number, t: LocalTime): Step {
     s.clocks.brothMs -= RULES.brothStepMs
     const before = s.egg.broth
     s.egg.broth = clamp(before - RULES.brothStep)
-    if (before > 0 && s.egg.broth === 0) step.effects.push(toast(TEXT.brothEmpty))
+    if (before > 0 && s.egg.broth === 0) step.effects.push(toast(T().brothEmpty))
   }
 
   s.clocks.moodMs += elapsed
@@ -87,7 +87,7 @@ export function tick(prev: Save, now: number, t: LocalTime): Step {
     s.egg.activeMinutes = 0
   } else if (s.egg.flipWantedAt === null && s.egg.activeMinutes >= RULES.flipAfterMin) {
     s.egg.flipWantedAt = now
-    step.effects.push(toast(TEXT.flipWanted))
+    step.effects.push(toast(T().flipWanted))
   }
   return step
 }
@@ -100,7 +100,7 @@ export function turnDone(prev: Save, now: number, t: LocalTime, rng: () => numbe
   gain(s, 1, t, true)
   if (t.hour < RULES.nightEndHour && s.nightToastFor !== t.date) {
     s.nightToastFor = t.date
-    step.effects.push(toast(pick(TEXT.night, rng)))
+    step.effects.push(toast(pick(T().night, rng)))
   }
   return step
 }
@@ -109,7 +109,7 @@ export function refill(prev: Save): Step {
   const step = begin(prev)
   step.save.egg.broth = 100
   step.save.egg.mood = Math.max(clamp(step.save.egg.mood + 20), 70)
-  step.reply = TEXT.refillReply
+  step.reply = T().refillReply
   return step
 }
 
@@ -117,14 +117,14 @@ export function flip(prev: Save, now: number, t: LocalTime): Step {
   const step = begin(prev)
   const egg = step.save.egg
   if (egg.flipWantedAt === null || now - egg.flipWantedAt > RULES.flipWindowMs) {
-    step.reply = TEXT.flipNotNeeded
+    step.reply = T().flipNotNeeded
     return step
   }
   const gained = gain(step.save, RULES.flipBonus, t, false)
   egg.mood = clamp(egg.mood + 15)
   egg.flipWantedAt = null
   egg.activeMinutes = 0
-  step.reply = gained > 0 ? TEXT.flipReply : TEXT.flipNoGain
+  step.reply = gained > 0 ? T().flipReply : T().flipNoGain
   return step
 }
 
