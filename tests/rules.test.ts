@@ -79,3 +79,17 @@ test('圖鑑文字：共 9 格，未獲得顯示 ???，第 9 格無提示', asyn
   expect(text.includes('❓ ???')).toBe(true)
   expect(text.split('???').length - 1).toBe(8)
 })
+
+test('圖鑑：獎勵蛋不論排在第幾格，未收集時都藏起圖示', async () => {
+  const sp = structuredClone(decodeSpoilers())
+  const prize = sp.dateMode.prize
+  const others = sp.dexSlots.filter(id => id !== prize)
+  // 獎勵蛋移到最前面，最後面再接一顆新的一般蛋
+  sp.eggs.newcomer = { name: '新蛋', icon: '🆕' }
+  sp.dexSlots = [prize, ...others, 'newcomer']
+  const text = dexText(newSave(NOW), '蛋圖鑑', sp)
+  expect(text).toContain(`0/${sp.dexSlots.length}`)
+  expect(text).toContain('🆕 ???')
+  expect(text).not.toContain(`${sp.eggs[prize]!.icon} ???`)
+  expect(text.split('❓ ???').length - 1).toBe(1)
+})

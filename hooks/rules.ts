@@ -2,7 +2,7 @@ import type { Egg, Save } from '../types'
 import { newEgg } from './model'
 import type { Effect, Step } from './engine'
 import { decodeSpoilers } from './spoilers'
-import type { Rule } from './spoiler-types'
+import type { Rule, Spoilers } from './spoiler-types'
 import { TEXT, fill } from './text'
 
 const DAY = 86_400_000
@@ -91,13 +91,18 @@ export function crack(prev: Save, keyword: string, now: number, rng: () => numbe
   return settle({ save, effects: [] }, now, rng)
 }
 
-export function dexText(save: Save, title: string): string {
-  const { eggs, dexSlots } = decodeSpoilers()
-  const prize = dexSlots[dexSlots.length - 1]
+// 特殊日期模式的獎勵蛋：未收集時連圖示都藏起來。依「是不是獎勵」判斷，不依格子位置，
+// 之後新增蛋種（一般或特殊）排在哪一格都不會認錯
+export function isPrizeEgg(id: string, sp: Spoilers = decodeSpoilers()): boolean {
+  return id === sp.dateMode.prize
+}
+
+export function dexText(save: Save, title: string, sp: Spoilers = decodeSpoilers()): string {
+  const { eggs, dexSlots } = sp
   const owned = dexSlots.filter(id => (save.dex[id] ?? 0) > 0)
   const missing = dexSlots.filter(id => (save.dex[id] ?? 0) === 0)
   const ownedText = owned.map(id => `${eggs[id]!.icon} ${eggs[id]!.name} ×${save.dex[id]}`)
-  const missingText = missing.map(id => (id === prize ? '❓ ???' : `${eggs[id]!.icon} ???`))
+  const missingText = missing.map(id => (isPrizeEgg(id, sp) ? '❓ ???' : `${eggs[id]!.icon} ???`))
   return [` ${title} ${owned.length}/${dexSlots.length}`, ` ${ownedText.join('   ')}`, ` ${missingText.join('   ')}`]
     .filter(line => line.trim() !== '')
     .join('\n')

@@ -7,7 +7,8 @@ test('劇透資料能解碼且結構完整', async () => {
   expect(s.rules[0]!.when).toBe('cracked')
   expect(s.rules[s.rules.length - 1]!.when).toBe('always')
   expect(s.dexSlots.length).toBe(9)
-  expect(s.dexSlots[8]).toBe(s.dateMode.prize)
+  expect(s.dexSlots).toContain(s.dateMode.prize)
+  expect(new Set(s.dexSlots).size).toBe(s.dexSlots.length)
   for (const id of s.dexSlots) expect(s.eggs[id]).toBeDefined()
 })
 

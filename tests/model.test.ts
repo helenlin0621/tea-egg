@@ -29,3 +29,19 @@ test('完全不是物件時給全新存檔', async () => {
   expect(s.dex).toEqual({})
   expect(s.welcomed).toBe(false)
 })
+
+test('新版多了蛋種：舊存檔原樣讀回，圖鑑紀錄不變', async () => {
+  const s = newSave(5)
+  s.egg.progress = 42
+  s.dex = { e1: 2, e4: 1 }
+  const old = JSON.parse(JSON.stringify(s))
+  const back = parseSave(old, 9)
+  expect(back.egg.progress).toBe(42)
+  expect(back.dex).toEqual({ e1: 2, e4: 1 })
+})
+
+test('存檔裡有新版才有的蛋種代號也照樣保留', async () => {
+  const s = newSave(5)
+  s.dex = { e1: 1, future_egg: 3 }
+  expect(parseSave(JSON.parse(JSON.stringify(s)), 9).dex).toEqual({ e1: 1, future_egg: 3 })
+})
