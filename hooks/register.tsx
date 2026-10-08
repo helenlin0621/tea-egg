@@ -59,6 +59,40 @@ async function togglePane($: EngineInterface): Promise<boolean> {
 // 每次載入只啟用一次；計時器握柄留著，重新註冊前先取消
 let tick: Timer | null = null
 
+// 桌面版開新 session 時畫面常常比 Mod 晚接上，attach 訊號會漏掉：
+// session.start 沒看到畫面就每 3 秒查一次，最多 10 分鐘，看到就啟用
+const WATCH_MS = 3_000
+const WATCH_LIMIT = 200
+let watch: Timer | null = null
+
+async function hasSurface($: EngineInterface): Promise<boolean> {
+  try {
+    return (await $.session.surfaces()).length > 0
+  } catch {
+    return false
+  }
+}
+
+function watchForSurface($: EngineInterface): void {
+  watch?.cancel()
+  let tries = 0
+  watch = $.clock.every(WATCH_MS, () => {
+    void (async () => {
+      tries++
+      if (interactive || tries > WATCH_LIMIT) {
+        watch?.cancel()
+        watch = null
+        return
+      }
+      if (await hasSurface($)) {
+        watch?.cancel()
+        watch = null
+        await activate($)
+      }
+    })().catch(() => undefined)
+  })
+}
+
 async function activate($: EngineInterface): Promise<void> {
   // 同步先占位，避免 start 與 attach 同時進來而重複啟用
   if (interactive) return
@@ -87,15 +121,9 @@ export const register: Register = on => {
     try {
       await $.command.register({ name: 'egg', description: '茶葉蛋養成計畫：/egg [refill|flip|dex|name 名字|help]' })
       // 有人在看才啟用：互動 session，或已經有畫面接上（桌面版熱重載不會再發 attach）
-      let seen = e.isInteractive === true
-      if (!seen) {
-        try {
-          seen = (await $.session.surfaces()).length > 0
-        } catch {
-          // 查不到就當沒有
-        }
-      }
+      const seen = e.isInteractive === true || (await hasSurface($))
       if (seen) await activate($)
+      else watchForSurface($)
     } catch {
       // 蛋出錯不影響使用者
     }
@@ -106,6 +134,16 @@ export const register: Register = on => {
   on('session.attach', async ($, e, next) => {
     try {
       await activate($)
+    } catch {
+      // 靜默略過
+    }
+    return next(e)
+  })
+
+  // 使用者送出訊息時若已有畫面接著，就算之前漏掉訊號也在這裡啟用（這一輪的入味才不會漏算）
+  on('prompt.submit', async ($, e, next) => {
+    try {
+      if (!interactive && (await hasSurface($))) await activate($)
     } catch {
       // 靜默略過
     }

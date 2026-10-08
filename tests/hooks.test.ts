@@ -174,3 +174,45 @@ test('特殊日期模式：假日期環境變數生效、原本的蛋不動', OP
   expect(after.egg).toEqual(before)
   expect(after.dateMode['2027']!.human).toBe(dm.humanStep)
 })
+
+const SDK_START = { cwd: '.', surface: null, isInteractive: false } as const
+
+test('桌面版：開場還沒有畫面，畫面晚幾秒接上也會自動啟用', OPTS, async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
+  mock.env(on, {})
+  base(on)
+  let surfaces: string[] = []
+  on('session.surfaces', () => ({ value: surfaces }) as never)
+  await $.session.start(SDK_START)
+  expect(await saved($)).toBe(null)
+  surfaces = ['desktop']
+  await clock.advance(3_000)
+  expect((await saved($)).egg.record.sessionCount).toBe(1)
+})
+
+test('沒有任何畫面的 session（-p、腳本）不會啟用', OPTS, async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
+  mock.env(on, {})
+  base(on)
+  on('session.surfaces', () => ({ value: [] }) as never)
+  await $.session.start(SDK_START)
+  await clock.advance(60_000)
+  expect(await saved($)).toBe(null)
+})
+
+test('送出訊息時已有畫面就啟用，這一輪照樣入味', OPTS, async ($, on) => {
+  mock.store(on)
+  mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
+  mock.env(on, {})
+  base(on)
+  let surfaces: string[] = []
+  on('session.surfaces', () => ({ value: surfaces }) as never)
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  await $.session.start(SDK_START)
+  surfaces = ['desktop']
+  await $.prompt.submit({ text: 'hi' })
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect((await saved($)).egg.progress).toBe(1)
+})
