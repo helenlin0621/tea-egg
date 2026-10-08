@@ -1,6 +1,6 @@
 {
   "name": "tea-egg",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "author": { "name": "helenlin0621" },
   "description": "Tea Egg: raise a pet egg that slowly marinates while you code",
   "types": "./types/index.d.ts"
