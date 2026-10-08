@@ -116,7 +116,8 @@ function quotedSegments(cmd: string): string[][] {
 
 // rm -rf only counts when some target lies outside a temp location. Temp locations:
 // - a path segment named tmp / temp / scratchpad with something below it (the folder itself still counts)
-// - anything under node_modules (including node_modules itself)
+// - anything under node_modules / bin / obj / build / .superpowers (including the folder itself), unless it sits
+//   under a system folder such as /usr or C:/Program Files
 // Paths are resolved with VAR=value / export / cd from earlier in the same command; $TEMP / $TMP / $TMPDIR and
 // $(mktemp ...) count as temp. Anything we can't resolve (unknown variables, ~, $(...) other than mktemp) counts.
 
@@ -147,10 +148,21 @@ function resolvePath(word: string, env: Env, cwd: string | null): string | null 
   return cwd === null ? path : `${cwd}/${path}`
 }
 
+const OUTPUT_DIRS = new Set(['node_modules', 'bin', 'obj', 'build', '.superpowers'])
+const SYSTEM_ROOT = /^(?:usr|bin|sbin|etc|opt|lib|lib64|var|boot|system|library|windows|program files|program files \(x86\)|programdata)$/i
+
+// /usr/bin, C:/Program Files/App/bin and the like are system folders, not build output
+function underSystemRoot(path: string, parts: string[]): boolean {
+  if (!isAbsolute(path)) return false
+  const drive = /^[A-Za-z]:$/.test(parts[0]!) || (path.startsWith('/') && /^[A-Za-z]$/.test(parts[0]!))
+  const first = drive ? parts[1] : parts[0]
+  return first !== undefined && SYSTEM_ROOT.test(first)
+}
+
 function isTempPath(path: string): boolean {
   const parts = path.split('/').filter(part => part !== '' && part !== '.')
   if (parts.includes('..')) return false
-  if (parts.includes('node_modules')) return true
+  if (parts.some(part => OUTPUT_DIRS.has(part)) && !underSystemRoot(path, parts)) return true
   const i = parts.findIndex(part => /^(?:tmp|temp|scratchpad)$/i.test(part))
   return i !== -1 && i < parts.length - 1
 }

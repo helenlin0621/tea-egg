@@ -13,9 +13,9 @@ test('Recognizes test commands', async () => {
 })
 
 test('Recognizes dangerous commands', async () => {
-  expect(dangerKeyword('rm -rf build')).toBe('rm -rf')
-  expect(dangerKeyword('rm -fr build')).toBe('rm -rf')
-  expect(dangerKeyword('rm -r -f build')).toBe('rm -rf')
+  expect(dangerKeyword('rm -rf src')).toBe('rm -rf')
+  expect(dangerKeyword('rm -fr src')).toBe('rm -rf')
+  expect(dangerKeyword('rm -r -f src')).toBe('rm -rf')
   expect(dangerKeyword('sudo rm -Rf ~/x')).toBe('rm -rf')
   expect(dangerKeyword('cd x && rm -rf y')).toBe('rm -rf')
   expect(dangerKeyword('git push --force')).toBe('git push --force')
@@ -50,6 +50,12 @@ test('rm -rf inside temp locations does not count', async () => {
     'rm -rf "$LOCALAPPDATA/Temp/x"',
     'rm -rf node_modules',
     'rm -rf web/node_modules packages/a/node_modules',
+    'rm -rf bin obj',
+    'rm -rf src/App/bin/Release src/App/obj',
+    'rm -rf build web/build',
+    'rm -rf "C:/Users/me/Desktop/TimeZoneCalc/bin"',
+    'rm -rf .superpowers/sdd/2026-10-07-tea-egg',
+    'cd /c/Users/me/proj && rm -rf .superpowers',
     'S=/c/Users/me/AppData/Local/Temp/claude/abc/scratchpad/te; rm -rf $S; mkdir -p $S',
     'SCR="C:/x/scratchpad"\nrm -rf "$SCR/restoretest" "$SCR/stage"',
     'tmp=$(mktemp -d); cd $tmp && rm -rf $tmp',
@@ -67,12 +73,17 @@ test('rm -rf still counts when any target is outside temp locations', async () =
     'rm -rf $UNKNOWN/x',
     'rm -rf "$HOME/project"',
     'rm -rf ~/scratch',
-    'rm -rf .superpowers/sdd/2026-10-07-tea-egg',
     'D="/c/Users/me/Desktop/work"; rm -rf "$D/probe-out"',
-    'cd /tmp/x && cd ~/project && rm -rf build',
+    'rm -rf /bin',
+    'rm -rf /usr/bin',
+    'rm -rf /usr/local/lib/node_modules',
+    'rm -rf "C:/Program Files/App/bin"',
+    'rm -rf C:/Windows/System32/obj',
+    'rm -rf builds binaries',
+    'cd /tmp/x && cd ~/project && rm -rf src',
     'S=/tmp/x; S=/home/me; rm -rf $S',
     'cd $(git rev-parse --show-toplevel) && rm -rf dist',
-    'rm -rf /tmp/x; rm -rf build',
+    'rm -rf /tmp/x; rm -rf src',
   ]) expect(dangerKeyword(cmd)).toBe('rm -rf')
 })
 
@@ -119,9 +130,9 @@ test('SQL keywords only count inside an SQL client', async () => {
 })
 
 test('Heredoc bodies are not commands', async () => {
-  expect(dangerKeyword("cat > clean.sh <<'EOF'\nrm -rf build\nEOF")).toBe(null)
-  expect(dangerKeyword('cat > clean.sh <<-EOF\nrm -rf build\nEOF\nls')).toBe(null)
-  expect(dangerKeyword("cat > x.sh <<'EOF'\necho hi\nEOF\nrm -rf build")).toBe('rm -rf')
+  expect(dangerKeyword("cat > clean.sh <<'EOF'\nrm -rf src\nEOF")).toBe(null)
+  expect(dangerKeyword('cat > clean.sh <<-EOF\nrm -rf src\nEOF\nls')).toBe(null)
+  expect(dangerKeyword("cat > x.sh <<'EOF'\necho hi\nEOF\nrm -rf src")).toBe('rm -rf')
   expect(isTestCommand('cat > run.sh <<EOF\nnpm test\nEOF')).toBe(false)
 })
 

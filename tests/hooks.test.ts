@@ -40,7 +40,7 @@ test('Observing Bash: the result is returned unchanged and not blocked', OPTS, a
   base(on)
   on('tool.call', { tool: 'Bash' }, () => BASH_OK)
   await $.session.start(START)
-  const ran = await $.tool.call({ tool: 'Bash', command: 'rm -rf build' })
+  const ran = await $.tool.call({ tool: 'Bash', command: 'rm -rf src' })
   expect(ran.deny).toBe(undefined)
   expect(ran.isError).not.toBe(true)
   expect((ran.result as { stdout: string }).stdout).toBe('ok')
