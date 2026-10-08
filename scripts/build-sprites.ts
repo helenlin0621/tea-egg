@@ -112,13 +112,14 @@ function edgeHistogram(cell: Img, axis: 0 | 1): number[] {
   return e
 }
 
-function fitAxis(e: number[]): { b: number; o: number; score: number } {
+// fixedB：只找格線偏移，色塊大小固定（同一張拼圖裡某格被誤判時用）
+function fitAxis(e: number[], fixedB?: number): { b: number; o: number; score: number } {
   let sum = 0, cnt = 0
   const n = e.length
   const tot = e.reduce((s, v) => s + v, 0) || 1
   let best = { b: B_MIN, o: 0, score: 0 }
   let bestAdj = -Infinity
-  for (let b = B_MIN; b <= B_MAX; b += B_STEP) {
+  for (let b = fixedB ?? B_MIN; b <= (fixedB ?? B_MAX); b += B_STEP) {
     for (let o10 = 0; o10 < Math.round(b / O_STEP); o10++) {
       const o = o10 * O_STEP
       let s = 0
@@ -211,8 +212,8 @@ function cropAndResize(cell: Img): Img {
 
 type SpriteInfo = { img: Img; mode: 'grid' | 'fallback'; bx: number; by: number; scoreX: number; scoreY: number }
 
-function toSize(cell: Img): SpriteInfo {
-  const fx = fitAxis(edgeHistogram(cell, 0)), fy = fitAxis(edgeHistogram(cell, 1))
+function toSize(cell: Img, force?: { bx: number; by: number }): SpriteInfo {
+  const fx = fitAxis(edgeHistogram(cell, 0), force?.bx), fy = fitAxis(edgeHistogram(cell, 1), force?.by)
   const native = fx.score >= GRID_MIN_SCORE && fy.score >= GRID_MIN_SCORE ? sampleNative(cell, fx.b, fx.o, fy.b, fy.o) : null
   if (!native) return { img: cropAndResize(cell), mode: 'fallback', bx: fx.b, by: fy.b, scoreX: fx.score, scoreY: fy.score }
   // 超過 SIZE 才最近鄰縮小到放得下；否則不縮放。水平置中、底部對齊（讓花盆在各張間對齊）
@@ -539,8 +540,17 @@ function main(argv: string[]): number {
       console.error(`${sheet.file}: 切出 ${cells.length} 格，但 manifest 列了 ${sheet.cells.length} 格`)
       return 1
     }
+    // 色塊大小跟同張拼圖多數格差太多（例如某格是人工貼上、比例不同）就改用多數格的大小，免得那張小圖整個變大或變小
+    const infos = cells.map(c => toSize(c))
+    const grid = infos.filter(f => f.mode === 'grid')
+    const median = (v: number[]) => [...v].sort((a, b) => a - b)[v.length >> 1]!
+    const ref = grid.length ? { bx: median(grid.map(f => f.bx)), by: median(grid.map(f => f.by)) } : null
     sheet.cells.forEach((name, i) => {
-      const info = toSize(cells[i]!)
+      let info = infos[i]!
+      if (ref && (Math.abs(info.bx / ref.bx - 1) > 0.1 || Math.abs(info.by / ref.by - 1) > 0.1)) {
+        console.log(`  ${name}: 色塊 ${info.bx.toFixed(2)}×${info.by.toFixed(2)} 與多數格不同，改用 ${ref.bx.toFixed(2)}×${ref.by.toFixed(2)}`)
+        info = toSize(cells[i]!, ref)
+      }
       images.set(name, info.img)
       const body = hdBody(cells[i]!)
       if (body && sheet.potAnchor) anchored.set(name, body)
