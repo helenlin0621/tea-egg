@@ -8,6 +8,9 @@ art-build/
 docs/superpowers/
 .superpowers/
 
+# Second git that backs the files above up to a private repo (npm run backup)
+.git-private/
+
 # Misc
 .claude-plugin/types/
 __pycache__/

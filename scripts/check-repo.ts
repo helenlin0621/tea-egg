@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SOURCE = join(ROOT, 'spoilers.source.json')
 const NEVER_TRACK = ['tea-egg-design.md', 'spoilers.source.json']
-const NEVER_TRACK_DIRS = ['art-source/', 'art-build/', 'docs/superpowers/', '.superpowers/', 'node_modules/']
+const NEVER_TRACK_DIRS = ['art-source/', 'art-build/', 'docs/superpowers/', '.superpowers/', '.git-private/', 'node_modules/']
 const NEVER_TRACK_EXT = ['.png']
 // The encoded spoiler files themselves aren't scanned (their content is base64)
 const SKIP_CONTENT = ['hooks/spoilers.ts', 'hooks/sprites-hd.ts']
