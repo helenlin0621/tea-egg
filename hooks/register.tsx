@@ -128,8 +128,15 @@ async function activate($: EngineInterface): Promise<void> {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     try {
-      // Pick the language first: the command description below is already localized
-      setLang(detectLang(await $.env.get('TEA_EGG_LANG')))
+      // Pick the language first: the command description below is already localized.
+      // A failed env read must not stop /egg from being registered, so fall back to the locale.
+      let envLang: string | undefined
+      try {
+        envLang = await $.env.get('TEA_EGG_LANG')
+      } catch {
+        envLang = undefined
+      }
+      setLang(detectLang(envLang))
       await $.command.register({ name: 'egg', description: T().commandDescription })
       // Activate only if someone is watching: an interactive session, or a surface already attached (a desktop hot reload sends no new attach)
       const seen = e.isInteractive === true || (await hasSurface($))
