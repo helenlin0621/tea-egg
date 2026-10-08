@@ -1,9 +1,11 @@
 // 把 art-source/ 的 PNG 拼圖轉成 48×48、全套共用 ≤32 色的像素資料。
 //
 // 輸出：hooks/sprites.ts（非劇透）、art-build/spoiler_sprites.json（劇透，之後由 encode-spoilers.ts 編碼）、
-//       art-build/preview.png（每張放大 4 倍、深灰底排成一列，人工確認用）
+//       art-build/preview.png（每張放大 4 倍、深灰底排成一列，人工確認用）、
+//       art-build/terminal/<圖名>.png（終端版 48×48 原尺寸、洋紅底，給人工修圖當底稿）
+// 終端版手改圖：art-source/terminal/<圖名>.png（48×48，洋紅 255,0,255 = 透明）存在就直接用它，不從拼圖算
 // 用法：npm run sprites [-- --source 資料夾]
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pngjs from 'pngjs'
@@ -313,15 +315,23 @@ function protectRare(palette: Rgb[], opaque: Rgb[]): void {
 }
 
 // 全部圖共用一組 ≤COLORS 色調色盤；只保留實際用到的顏色
-function quantize(images: Map<string, Img>): { palette: number[]; grids: Map<string, string> } {
-  const opaque: Rgb[] = []
-  for (const img of images.values()) {
-    for (let i = 0; i < img.data.length; i += 4) {
-      if (img.data[i + 3]! > 0) opaque.push([img.data[i]!, img.data[i + 1]!, img.data[i + 2]!])
+// paletteFrom：只用這些圖算 median cut（手改圖不參與，免得改一張就讓其他張配色跑掉）；
+// 手改圖裡離調色盤太遠的新顏色仍由 protectRare 補進來
+function quantize(images: Map<string, Img>, paletteFrom: Map<string, Img> = images): { palette: number[]; grids: Map<string, string> } {
+  const pixels = (imgs: Iterable<Img>) => {
+    const out: Rgb[] = []
+    for (const img of imgs) {
+      for (let i = 0; i < img.data.length; i += 4) {
+        if (img.data[i + 3]! > 0) out.push([img.data[i]!, img.data[i + 1]!, img.data[i + 2]!])
+      }
     }
+    return out
   }
-  const raw = medianCut(opaque, COLORS)
-  protectRare(raw, opaque)
+  const base = pixels(paletteFrom.values())
+  const raw = medianCut(base, COLORS)
+  protectRare(raw, base)
+  // 第二輪只看手改圖：沿用既有顏色時什麼都不會變，畫了新顏色才補
+  protectRare(raw, pixels([...images].filter(([n, img]) => paletteFrom.get(n) !== img).map(([, img]) => img)))
   const index = new Map<string, number[]>()
   const used = new Set<number>()
   for (const [name, img] of images) {
@@ -362,6 +372,20 @@ function writeTs(path: string, palette: number[], sprites: Map<string, string>, 
 }
 
 // 公開圖放大 PREVIEW_SCALE 倍、深灰底、排成一列
+// 每張終端版小圖存成 48×48 PNG，透明處填洋紅（小畫家不支援透明）
+function writeTerminalPngs(dir: string, palette: number[], sprites: Map<string, string>): void {
+  mkdirSync(dir, { recursive: true })
+  for (const [name, px] of sprites) {
+    const png = new PNG({ width: SIZE, height: SIZE })
+    for (let i = 0; i < SIZE * SIZE; i++) {
+      const c = px[i]!
+      const rgb = c === '.' ? 0xff00ff : palette[parseInt(c, 32)]!
+      png.data.set([(rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255, 255], i * 4)
+    }
+    writeFileSync(join(dir, `${name}.png`), PNG.sync.write(png))
+  }
+}
+
 function writePreview(path: string, palette: number[], sprites: Map<string, string>): void {
   const pad = 8
   const cell = SIZE * PREVIEW_SCALE
@@ -613,13 +637,31 @@ function main(argv: string[]): number {
     hd.set(name, { width: png.width, height: png.height, data: png.data })
     console.log(`  ${name}: 高解析圖改用 ${file}`)
   }
-  const { palette, grids } = quantize(images)
+  const auto = new Map(images)
+  for (const name of auto.keys()) {
+    const file = join(src, 'terminal', `${name}.png`)
+    if (!existsSync(file)) continue
+    const png = PNG.sync.read(readFileSync(file))
+    if (png.width !== SIZE || png.height !== SIZE) {
+      console.error(`terminal/${name}.png: 終端版手改圖必須是 ${SIZE}×${SIZE}`)
+      return 1
+    }
+    const img: Img = { width: SIZE, height: SIZE, data: new Uint8Array(png.data) }
+    for (let i = 0; i < img.data.length; i += 4) {
+      if (isMagenta([img.data[i]!, img.data[i + 1]!, img.data[i + 2]!, img.data[i + 3]!])) img.data.set([0, 0, 0, 0], i)
+      else img.data[i + 3] = 255
+    }
+    images.set(name, img)
+    console.log(`  ${name}: 終端版改用 terminal/${name}.png`)
+  }
+  const { palette, grids } = quantize(images, auto)
   const pub = new Map([...grids].filter(([n]) => !spoilerNames.has(n)))
   const secret = Object.fromEntries([...grids].filter(([n]) => spoilerNames.has(n)))
   writeTs(join(ROOT, 'hooks', 'sprites.ts'), palette, pub, manifest.faceBox ?? null)
   mkdirSync(join(ROOT, 'art-build'), { recursive: true })
   writeFileSync(join(ROOT, 'art-build', 'spoiler_sprites.json'), JSON.stringify(secret), 'utf8')
   writePreview(join(ROOT, 'art-build', 'preview.png'), palette, pub)
+  writeTerminalPngs(join(ROOT, 'art-build', 'terminal'), palette, grids)
   const hdB64 = new Map([...hd].map(([n, img]) => [n, pngBase64(img)] as const))
   writeHdTs(join(ROOT, 'hooks', 'sprites-hd.ts'), new Map([...hdB64].filter(([n]) => !spoilerNames.has(n))))
   writeFileSync(join(ROOT, 'art-build', 'spoiler_sprites_hd.json'), JSON.stringify(Object.fromEntries([...hdB64].filter(([n]) => spoilerNames.has(n)))), 'utf8')
