@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 import { decodeSpoilers } from '../hooks/spoilers'
-import { crack, dexText, outcome, predictHint, settle } from '../hooks/rules'
+import { crack, dexCaption, dexHeader, dexText, outcome, predictHint, settle } from '../hooks/rules'
 import { newSave, newEgg } from '../hooks/model'
 import { RULES, turnDone } from '../hooks/engine'
 import { at } from './helpers'
@@ -103,4 +103,15 @@ test('A new egg starts with a fresh daily flavor cap, even after the previous eg
   expect(r.save.egg.no).toBe(2)
   const next = turnDone(r.save, NOW, at('2026-10-07'), noLuck)
   expect(next.save.egg.progress).toBe(1)
+})
+
+test('Dex pane: header is only the count; captions show name and count once collected, ??? before', async () => {
+  const s = newSave(NOW)
+  const id = ruleEgg(7)
+  s.dex = { [id]: 3 }
+  expect(dexHeader(s, '蛋圖鑑')).toBe(' 蛋圖鑑 1/9')
+  const sp = decodeSpoilers()
+  expect(dexCaption(s, id)).toEqual({ name: sp.eggs[id]!.name, count: '×3' })
+  const missing = sp.dexSlots.find(x => x !== id)!
+  expect(dexCaption(s, missing)).toEqual({ name: '???', count: ' ' })
 })

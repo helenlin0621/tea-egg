@@ -4,7 +4,7 @@ import { observe, OBSERVED_TOOLS } from './detect'
 import { dexTitle, onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
 import { FAKE_STORE_KEY, STORE_KEY } from './model'
 import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, previewArt, SVG_PX, type Art } from './panel'
-import { dexText } from './rules'
+import { dexCaption, dexHeader } from './rules'
 import { decodeSpoilers } from './spoilers'
 import { mutate, type StoreIo } from './store'
 import { detectLang, setLang } from './i18n'
@@ -279,10 +279,20 @@ export const register: Register = on => {
             <Button key="flip" label={T().buttons.flip} onPress={press('flip')} />
             <Button key="dex" label={T().buttons.dex} onPress={() => update($, SHOW_DEX_REF, v => !v)} />
           </Box>
-          {showDex && <Text>{dexText(save, dexTitle(t))}</Text>}
+          {showDex && <Text>{dexHeader(save, dexTitle(t))}</Text>}
           {showDex && (
             <Box flexWrap="wrap">
-              {slots.map(id => draw(dexArt(id, (save.dex[id] ?? 0) > 0, e.surface), `dex-${id}`))}
+              {slots.map(id => {
+                const cap = dexCaption(save, id)
+                const owned = (save.dex[id] ?? 0) > 0
+                return (
+                  <Box key={`dex-${id}`} flexDirection="column" alignItems="center" marginRight={1}>
+                    {draw(dexArt(id, owned, e.surface), `dex-art-${id}`)}
+                    <Text key={`dex-name-${id}`} dimColor={!owned}>{cap.name}</Text>
+                    <Text key={`dex-count-${id}`} dimColor>{cap.count}</Text>
+                  </Box>
+                )
+              })}
             </Box>
           )}
         </Box>

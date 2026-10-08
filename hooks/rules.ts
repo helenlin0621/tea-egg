@@ -98,13 +98,26 @@ export function isPrizeEgg(id: string, sp: Spoilers = decodeSpoilers()): boolean
   return id === sp.dateMode.prize
 }
 
+// Pane header: the pictures carry the rest
+export function dexHeader(save: Save, title: string, sp: Spoilers = decodeSpoilers()): string {
+  const owned = sp.dexSlots.filter(id => (save.dex[id] ?? 0) > 0)
+  return ` ${title} ${owned.length}/${sp.dexSlots.length}`
+}
+
+// Caption under one pane cell: name and count once collected, ??? before
+export function dexCaption(save: Save, id: string, sp: Spoilers = decodeSpoilers()): { name: string; count: string } {
+  const n = save.dex[id] ?? 0
+  return n > 0 ? { name: sp.eggs[id]!.name, count: `×${n}` } : { name: '???', count: ' ' }
+}
+
+// Text-only dex (the /egg dex reply)
 export function dexText(save: Save, title: string, sp: Spoilers = decodeSpoilers()): string {
   const { eggs, dexSlots } = sp
   const owned = dexSlots.filter(id => (save.dex[id] ?? 0) > 0)
   const missing = dexSlots.filter(id => (save.dex[id] ?? 0) === 0)
   const ownedText = owned.map(id => `${eggs[id]!.icon} ${eggs[id]!.name} ×${save.dex[id]}`)
   const missingText = missing.map(id => (isPrizeEgg(id, sp) ? '❓ ???' : `${eggs[id]!.icon} ???`))
-  return [` ${title} ${owned.length}/${dexSlots.length}`, ` ${ownedText.join('   ')}`, ` ${missingText.join('   ')}`]
+  return [dexHeader(save, title, sp), ` ${ownedText.join('   ')}`, ` ${missingText.join('   ')}`]
     .filter(line => line.trim() !== '')
     .join('\n')
 }
