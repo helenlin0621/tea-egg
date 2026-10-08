@@ -19,6 +19,8 @@ export type Text = {
   nameUsage: string
   paneOpened: string
   paneClosed: string
+  bandHidden: string
+  bandShown: string
   unknown: string
   error: string
   help: string
@@ -34,7 +36,7 @@ export type Text = {
   // Band separator: full-width bar for CJK, a narrow one for English
   separator: string
   stageNames: readonly [string, string, string, string]
-  buttons: { refill: string; flip: string; dex: string; panel: string }
+  buttons: { refill: string; flip: string; dex: string; panel: string; hideBand: string; showBand: string }
   waiting: string
   eggAlt: string
   previewLabels: Readonly<Record<string, string>>
@@ -62,6 +64,8 @@ const ZH: Text = {
   nameUsage: '用法：/egg name <名字>（最多 12 個字）',
   paneOpened: '已開啟茶葉蛋面板',
   paneClosed: '已關閉茶葉蛋面板',
+  bandHidden: '已隱藏橫條，輸入 /egg band 可再顯示',
+  bandShown: '已顯示橫條',
   unknown: '不認得這個指令，輸入 /egg help 看看',
   error: '蛋暫時聯絡不上，稍後再試 🥚',
   help: [
@@ -70,11 +74,12 @@ const ZH: Text = {
     '/egg refill     加滷汁',
     '/egg flip       翻面',
     '/egg dex        顯示圖鑑',
+    '/egg band       隱藏／顯示輸入框上方的橫條',
     '/egg name 名字  幫目前的蛋取名',
     '/egg help       說明',
   ].join('\n'),
   title: '茶葉蛋養成計畫',
-  commandDescription: '茶葉蛋養成計畫：/egg [refill|flip|dex|name 名字|help]',
+  commandDescription: '茶葉蛋養成計畫：/egg [refill|flip|dex|band|name 名字|help]',
   defaultName: '小蛋',
   dexTitle: '蛋圖鑑',
   flavor: '入味',
@@ -82,7 +87,7 @@ const ZH: Text = {
   mood: '心情',
   separator: ' ｜ ',
   stageNames: ['生蛋', '裂紋', '入味', '滷透'],
-  buttons: { refill: '加滷汁', flip: '翻面', dex: '圖鑑', panel: '面板' },
+  buttons: { refill: '加滷汁', flip: '翻面', dex: '圖鑑', panel: '面板', hideBand: '隱藏橫條', showBand: '顯示橫條' },
   waiting: '蛋還在路上…',
   eggAlt: '茶葉蛋',
   previewLabels: {
@@ -126,6 +131,8 @@ const EN: Text = {
   nameUsage: 'Usage: /egg name <name> (up to 12 characters)',
   paneOpened: 'Tea egg panel opened',
   paneClosed: 'Tea egg panel closed',
+  bandHidden: 'Band hidden. Type /egg band to bring it back',
+  bandShown: 'Band shown',
   unknown: 'Unknown command. Try /egg help',
   error: "Can't reach the egg right now. Try again later 🥚",
   help: [
@@ -134,11 +141,12 @@ const EN: Text = {
     '/egg refill     Top up the broth',
     '/egg flip       Flip the egg',
     '/egg dex        Show the Eggdex',
+    '/egg band       Hide/show the band above the prompt',
     '/egg name NAME  Name the current egg',
     '/egg help       Show this help',
   ].join('\n'),
   title: 'Tea Egg',
-  commandDescription: 'Tea Egg, a pet egg that marinates while you code: /egg [refill|flip|dex|name NAME|help]',
+  commandDescription: 'Tea Egg, a pet egg that marinates while you code: /egg [refill|flip|dex|band|name NAME|help]',
   defaultName: 'Eggy',
   dexTitle: 'Eggdex',
   flavor: 'Flavor',
@@ -146,7 +154,7 @@ const EN: Text = {
   mood: 'Mood',
   separator: ' | ',
   stageNames: ['Raw', 'Cracked', 'Soaking', 'Steeped'],
-  buttons: { refill: 'Refill', flip: 'Flip', dex: 'Dex', panel: 'Panel' },
+  buttons: { refill: 'Refill', flip: 'Flip', dex: 'Dex', panel: 'Panel', hideBand: 'Hide band', showBand: 'Show band' },
   waiting: 'Your egg is on its way…',
   eggAlt: 'Tea egg',
   previewLabels: {

@@ -2,7 +2,7 @@ import { update, type EngineInterface, type Register, type Timer } from 'claude-
 import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTime } from './clock'
 import { observe, OBSERVED_TOOLS } from './detect'
 import { dexTitle, onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
-import { FAKE_STORE_KEY, STORE_KEY } from './model'
+import { BAND_STORE_KEY, FAKE_STORE_KEY, STORE_KEY } from './model'
 import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, previewArt, SVG_PX, type Art } from './panel'
 import { dexCaption, dexHeader } from './rules'
 import { decodeSpoilers } from './spoilers'
@@ -17,6 +17,7 @@ const SAVE_REF = { plugin: 'tea-egg', key: 'save' } as const
 const SHOW_DEX_REF = { plugin: 'tea-egg', key: 'showDex' } as const
 const COUNTED_REF = { plugin: 'tea-egg', key: 'sessionCounted' } as const
 const PREVIEW_REF = { plugin: 'tea-egg', key: 'preview' } as const
+const BAND_REF = { plugin: 'tea-egg', key: 'bandHidden' } as const
 
 export const PANE = 'tea-egg'
 const TICK_MS = 60_000
@@ -61,6 +62,23 @@ async function togglePane($: EngineInterface): Promise<boolean> {
   }
   await $.ui.open({ id: PANE, title: T().title })
   return true
+}
+
+// The band's hidden flag lives in the store (kept across sessions); state mirrors it so render can read it
+async function loadBand($: EngineInterface): Promise<void> {
+  try {
+    await $.state.set(BAND_REF, (await $.store.get(BAND_STORE_KEY)) === true)
+  } catch {
+    // Show the band when the flag can't be read
+  }
+}
+
+// Flip the band's hidden flag; returns whether it is hidden now
+async function toggleBand($: EngineInterface): Promise<boolean> {
+  const hidden = (await $.state.get(BAND_REF)).value !== true
+  await $.store.set(BAND_STORE_KEY, hidden)
+  await $.state.set(BAND_REF, hidden)
+  return hidden
 }
 
 // Activate only once per load; keep the timer handle and cancel it before registering again
@@ -138,6 +156,7 @@ export const register: Register = on => {
       }
       setLang(detectLang(envLang))
       await $.command.register({ name: 'egg', description: T().commandDescription })
+      await loadBand($)
       // Activate only if someone is watching: an interactive session, or a surface already attached (a desktop hot reload sends no new attach)
       const seen = e.isInteractive === true || (await hasSurface($))
       if (seen) await activate($)
@@ -201,17 +220,25 @@ export const register: Register = on => {
       // The prompt being drawn means a surface is attached; state can't be written during render, so activate on the next tick
       if (!interactive) $.clock.after(0, () => void activate($))
       if (e.props.hasSurvey) return next(e)
+      if ((await $.state.get(BAND_REF)).value === true) return next(e)
       const save = (await $.state.get(SAVE_REF)).value
       if (!save) return next(e)
       const now = await $.clock.now()
       const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
-      // Reserve room on the right for the panel button (1 space + its label + 1 column of margin)
-      const reserve = strWidth(T().buttons.panel) + 2
+      // Reserve room on the right for the panel and × buttons (1 space + label + 1 space + × + 1 column of margin)
+      const reserve = strWidth(T().buttons.panel) + 4
       const segs = fitSegments(bandSegments(save, localNow(now), now), Math.max(10, columns - reserve))
       const { Box, Text, Button } = $.ui.resolve(e)
       const onPanel = async () => {
         try {
           await togglePane($)
+        } catch {
+          // A button error must never affect the user
+        }
+      }
+      const onHide = async () => {
+        try {
+          if (await toggleBand($)) $.ui.toast(T().bandHidden)
         } catch {
           // A button error must never affect the user
         }
@@ -223,6 +250,8 @@ export const register: Register = on => {
           ))}
           <Text key="gap"> </Text>
           <Button key="panel" label={T().buttons.panel} plain dimColor onPress={onPanel} />
+          <Text key="gap2"> </Text>
+          <Button key="hide" label="×" plain dimColor onPress={onHide} />
         </Box>
       )
     } catch {
@@ -235,6 +264,7 @@ export const register: Register = on => {
       const { Box, Text, Button } = $.ui.resolve(e)
       const save = (await $.state.get(SAVE_REF)).value
       const showDex = (await $.state.get(SHOW_DEX_REF)).value === true
+      const bandHidden = (await $.state.get(BAND_REF)).value === true
       if (!save) return <Text dimColor>{T().waiting}</Text>
       const now = await $.clock.now()
       const t = localNow(now)
@@ -278,6 +308,17 @@ export const register: Register = on => {
             <Button key="refill" label={T().buttons.refill} onPress={press('refill')} />
             <Button key="flip" label={T().buttons.flip} onPress={press('flip')} />
             <Button key="dex" label={T().buttons.dex} onPress={() => update($, SHOW_DEX_REF, v => !v)} />
+            <Button
+              key="band"
+              label={bandHidden ? T().buttons.showBand : T().buttons.hideBand}
+              onPress={async () => {
+                try {
+                  await toggleBand($)
+                } catch {
+                  // A button error must never affect the user
+                }
+              }}
+            />
           </Box>
           {showDex && <Text>{dexHeader(save, dexTitle(t))}</Text>}
           {showDex && (
@@ -309,6 +350,7 @@ export const register: Register = on => {
       if (!interactive) return { text: T().help }
       const args = e.args.trim()
       if (args === '') return { text: (await togglePane($)) ? T().paneOpened : T().paneClosed }
+      if (args === 'band') return { text: (await toggleBand($)) ? T().bandHidden : T().bandShown }
       // Dev preview: only switches the displayed sprite; never reads or changes the save
       if (args === 'preview' || args.startsWith('preview ')) {
         const current = (await $.state.get(PREVIEW_REF)).value ?? null

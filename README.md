@@ -36,6 +36,7 @@ Then restart Claude Code.
 | `/egg refill` | Top up the broth |
 | `/egg flip` | Flip the egg |
 | `/egg dex` | Show the Eggdex |
+| `/egg band` | Hide/show the band above the prompt (stays that way until you run it again; the × on the band hides it too) |
 | `/egg name <name>` | Name the current egg |
 | `/egg help` | Help |
 

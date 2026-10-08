@@ -4,6 +4,8 @@ import { T } from './text'
 export const STORE_KEY = 'tea-egg/v1'
 // Used instead while TEA_EGG_FAKE_DATE is in effect, so fake test dates never touch the real egg
 export const FAKE_STORE_KEY = 'tea-egg/v1-fake'
+// Whether the band above the prompt is hidden; kept apart from the save so it survives fake dates and egg resets
+export const BAND_STORE_KEY = 'tea-egg/band-hidden'
 
 export function newRecord(now: number): EggRecord {
   return {
