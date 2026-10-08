@@ -244,14 +244,19 @@ export const register: Register = on => {
         }
       }
       return (
-        <Box>
-          {segs.map((seg, i) => (
-            <Text key={String(i)} color={seg.color} dimColor={seg.dim}>{seg.text}</Text>
-          ))}
-          <Text key="gap"> </Text>
-          <Button key="panel" label={T().buttons.panel} plain dimColor onPress={onPanel} />
-          <Text key="gap2"> </Text>
-          <Button key="hide" label="×" plain dimColor onPress={onHide} />
+        // Stats on the left; the panel and × buttons pinned to the right edge
+        <Box justifyContent="space-between" width="100%">
+          <Box key="stats">
+            {segs.map((seg, i) => (
+              <Text key={String(i)} color={seg.color} dimColor={seg.dim}>{seg.text}</Text>
+            ))}
+          </Box>
+          <Box key="actions">
+            <Text key="gap"> </Text>
+            <Button key="panel" label={T().buttons.panel} plain dimColor onPress={onPanel} />
+            <Text key="gap2"> </Text>
+            <Button key="hide" label="×" plain dimColor onPress={onHide} />
+          </Box>
         </Box>
       )
     } catch {
