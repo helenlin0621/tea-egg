@@ -65,8 +65,134 @@ function shortFlags(words: string[]): string {
   return words.filter(w => /^-[A-Za-z]+$/.test(w)).map(w => w.slice(1)).join('')
 }
 
+// Split into segments of words like segments(), but keep what's inside quotes (rm targets are often quoted paths).
+// $(...) stays inside its word. Unquoted backslash escapes the next character, as in bash.
+function quotedSegments(cmd: string): string[][] {
+  const segs: string[][] = []
+  let words: string[] = []
+  let word: string | null = null
+  const endWord = () => { if (word !== null) words.push(word); word = null }
+  const endSeg = () => { endWord(); if (words.length > 0) segs.push(words); words = [] }
+  const text = withoutHeredocs(cmd)
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!
+    if (ch === "'") {
+      const end = text.indexOf("'", i + 1)
+      const stop = end === -1 ? text.length : end
+      word = (word ?? '') + text.slice(i + 1, stop)
+      i = stop
+    } else if (ch === '"') {
+      let j = i + 1
+      let s = ''
+      while (j < text.length && text[j] !== '"') {
+        if (text[j] === '\\' && j + 1 < text.length && '"\\$`'.includes(text[j + 1]!)) j++
+        s += text[j]
+        j++
+      }
+      word = (word ?? '') + s
+      i = j
+    } else if (ch === '$' && text[i + 1] === '(') {
+      let depth = 0
+      let j = i + 1
+      for (; j < text.length; j++) {
+        if (text[j] === '(') depth++
+        else if (text[j] === ')' && --depth === 0) break
+      }
+      word = (word ?? '') + text.slice(i, j + 1)
+      i = j
+    } else if (ch === '\\' && i + 1 < text.length) {
+      word = (word ?? '') + text[++i]
+    } else if (';&|()\n'.includes(ch)) {
+      endSeg()
+    } else if (/\s/.test(ch)) {
+      endWord()
+    } else {
+      word = (word ?? '') + ch
+    }
+  }
+  endSeg()
+  return segs
+}
+
+// rm -rf only counts when some target lies outside a temp location. Temp locations:
+// - a path segment named tmp / temp / scratchpad with something below it (the folder itself still counts)
+// - anything under node_modules (including node_modules itself)
+// Paths are resolved with VAR=value / export / cd from earlier in the same command; $TEMP / $TMP / $TMPDIR and
+// $(mktemp ...) count as temp. Anything we can't resolve (unknown variables, ~, $(...) other than mktemp) counts.
+
+const TEMP_VARS: Record<string, string> = { TEMP: '/tmp', TMP: '/tmp', TMPDIR: '/tmp', LOCALAPPDATA: '/AppData/Local' }
+
+type Env = Map<string, string | null>
+
+function expand(word: string, env: Env): string | null {
+  if (/^\$\(\s*mktemp\b[^)]*\)$/.test(word)) return '/tmp/mktemp'
+  if (word.includes('$(') || word.includes('`') || word.startsWith('~')) return null
+  let unresolved = false
+  const out = word.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, a: string | undefined, b: string | undefined) => {
+    const name = (a ?? b)!
+    const value = env.has(name) ? env.get(name)! : TEMP_VARS[name] ?? null
+    if (value === null) unresolved = true
+    return value ?? ''
+  })
+  return unresolved ? null : out
+}
+
+const isAbsolute = (p: string) => /^(?:\/|[A-Za-z]:)/.test(p)
+
+function resolvePath(word: string, env: Env, cwd: string | null): string | null {
+  const p = expand(word, env)
+  if (p === null) return null
+  const path = p.replace(/\\/g, '/')
+  if (isAbsolute(path)) return path
+  return cwd === null ? path : `${cwd}/${path}`
+}
+
+function isTempPath(path: string): boolean {
+  const parts = path.split('/').filter(part => part !== '' && part !== '.')
+  if (parts.includes('..')) return false
+  if (parts.includes('node_modules')) return true
+  const i = parts.findIndex(part => /^(?:tmp|temp|scratchpad)$/i.test(part))
+  return i !== -1 && i < parts.length - 1
+}
+
+const isRedirect = (w: string) => /^\d*[<>]/.test(w)
+
+function unsafeRm(cmd: string): boolean {
+  const env: Env = new Map()
+  let cwd: string | null = null
+  for (const segment of quotedSegments(cmd)) {
+    let words = segment
+    if (words[0] === 'export') words = words.slice(1)
+    let i = 0
+    while (i < words.length && (words[i] === 'sudo' || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]!))) {
+      const m = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s.exec(words[i]!)
+      if (m) env.set(m[1]!, expand(m[2]!, env))
+      i++
+    }
+    words = words.slice(i).filter(w => !isRedirect(w))
+    const [head, ...args] = words
+    if (head === 'cd') {
+      const dest = args[0]
+      cwd = dest === undefined ? null : resolvePath(dest, env, cwd)
+      continue
+    }
+    if (head !== 'rm') continue
+    const flags = shortFlags(words)
+    const recursive = /[rR]/.test(flags) || words.includes('--recursive')
+    const force = flags.includes('f') || words.includes('--force')
+    if (!recursive || !force) continue
+    const targets = args.filter(w => !w.startsWith('-'))
+    if (targets.length === 0) continue
+    for (const t of targets) {
+      const path = resolvePath(t, env, cwd)
+      if (path === null || !isTempPath(path)) return true
+    }
+  }
+  return false
+}
+
 // Dangerous commands we watch for:
-// - rm -rf (recursive + forced delete)
+// - rm -rf (recursive + forced delete), unless every target is in a temp location (see unsafeRm)
 // - git push --force / -f / --force-with-lease (force push)
 // - git reset --hard
 // - git clean -fd (not with -n / --dry-run)
@@ -95,7 +221,7 @@ export function dangerKeyword(cmd: string): string | null {
     if (head === 'rm') {
       const recursive = /[rR]/.test(flags) || words.includes('--recursive')
       const force = flags.includes('f') || words.includes('--force')
-      if (recursive && force) return 'rm -rf'
+      if (recursive && force && unsafeRm(cmd)) return 'rm -rf'
     }
     if (head === 'git' && sub === 'push') {
       if (words.some(w => w === '--force' || w === '--force-with-lease' || w.startsWith('--force-with-lease=')) || flags.includes('f')) {

@@ -16,7 +16,7 @@ test('Recognizes dangerous commands', async () => {
   expect(dangerKeyword('rm -rf build')).toBe('rm -rf')
   expect(dangerKeyword('rm -fr build')).toBe('rm -rf')
   expect(dangerKeyword('rm -r -f build')).toBe('rm -rf')
-  expect(dangerKeyword('sudo rm -Rf /tmp/x')).toBe('rm -rf')
+  expect(dangerKeyword('sudo rm -Rf ~/x')).toBe('rm -rf')
   expect(dangerKeyword('cd x && rm -rf y')).toBe('rm -rf')
   expect(dangerKeyword('git push --force')).toBe('git push --force')
   expect(dangerKeyword('git push -f origin main')).toBe('git push --force')
@@ -38,6 +38,42 @@ test('Merely mentioning a dangerous command does not count', async () => {
   expect(dangerKeyword('git push origin main')).toBe(null)
   expect(dangerKeyword('truncate -s 0 log.txt')).toBe(null)
   expect(dangerKeyword('chmod 755 run.sh')).toBe(null)
+})
+
+test('rm -rf inside temp locations does not count', async () => {
+  for (const cmd of [
+    'rm -rf /tmp/x',
+    'sudo rm -Rf /tmp/x /var/tmp/y',
+    'rm -rf "C:/Users/me/AppData/Local/Temp/claude/abc/scratchpad/wrtest"',
+    'rm -rf C:\\\\Users\\\\me\\\\AppData\\\\Local\\\\Temp\\\\build',
+    'rm -rf "$TEMP/out" $TMPDIR/x ${TMP}/y',
+    'rm -rf "$LOCALAPPDATA/Temp/x"',
+    'rm -rf node_modules',
+    'rm -rf web/node_modules packages/a/node_modules',
+    'S=/c/Users/me/AppData/Local/Temp/claude/abc/scratchpad/te; rm -rf $S; mkdir -p $S',
+    'SCR="C:/x/scratchpad"\nrm -rf "$SCR/restoretest" "$SCR/stage"',
+    'tmp=$(mktemp -d); cd $tmp && rm -rf $tmp',
+    'export T=/tmp/work && rm -rf "$T"/*',
+    'cd /c/Users/me/AppData/Local/Temp/claude/abc/scratchpad && rm -rf rfs.git',
+    'cd "$TEMP/claude/abc/scratchpad" 2>/dev/null; rm -rf dfcc-inspect 2>/dev/null',
+  ]) expect(dangerKeyword(cmd)).toBe(null)
+})
+
+test('rm -rf still counts when any target is outside temp locations', async () => {
+  for (const cmd of [
+    'rm -rf /tmp',
+    'rm -rf /tmp/x src',
+    'rm -rf /tmp/../home/me',
+    'rm -rf $UNKNOWN/x',
+    'rm -rf "$HOME/project"',
+    'rm -rf ~/scratch',
+    'rm -rf .superpowers/sdd/2026-10-07-tea-egg',
+    'D="/c/Users/me/Desktop/work"; rm -rf "$D/probe-out"',
+    'cd /tmp/x && cd ~/project && rm -rf build',
+    'S=/tmp/x; S=/home/me; rm -rf $S',
+    'cd $(git rev-parse --show-toplevel) && rm -rf dist',
+    'rm -rf /tmp/x; rm -rf build',
+  ]) expect(dangerKeyword(cmd)).toBe('rm -rf')
 })
 
 test('Observation: denied calls do not count; PowerShell is observed too', async () => {
