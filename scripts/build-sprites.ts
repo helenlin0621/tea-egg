@@ -473,6 +473,45 @@ function anchoredScales(bodies: Map<string, Img>): Map<string, number> {
   return new Map([...pots].map(([name, p]) => [name, target / p] as const))
 }
 
+// 眾數縮小：每個輸出像素取來源範圍內出現最多的顏色（不平均，邊緣不會糊）；不透明不到一半就留透明
+function modeScale(src: Img, w: number, h: number): Img {
+  const out = blank(w, h, [0, 0, 0, 0])
+  const sx = src.width / w, sy = src.height / h
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const counts = new Map<number, { n: number; c: Rgb }>()
+      let total = 0, opaque = 0
+      for (let j = Math.floor(y * sy); j < Math.max(Math.floor((y + 1) * sy), Math.floor(y * sy) + 1); j++) {
+        for (let i = Math.floor(x * sx); i < Math.max(Math.floor((x + 1) * sx), Math.floor(x * sx) + 1); i++) {
+          total++
+          const p = pixel(src, Math.min(i, src.width - 1), Math.min(j, src.height - 1))
+          if (p[3] <= 128) continue
+          opaque++
+          const k = ((p[0] >> 3) << 10) | ((p[1] >> 3) << 5) | (p[2] >> 3)
+          const e = counts.get(k)
+          if (e) e.n++; else counts.set(k, { n: 1, c: [p[0], p[1], p[2]] })
+        }
+      }
+      if (opaque * 2 < total) continue
+      let best: Rgb = [0, 0, 0], bn = 0
+      for (const { n, c } of counts.values()) if (n > bn) { bn = n; best = c }
+      out.data.set([...best, 255], (y * w + x) * 4)
+    }
+  }
+  return out
+}
+
+// 對不上格線的格子（例如人工貼上、色塊比例不同）：用去背後的原圖眾數縮小，讓鍋子寬度跟同張其他格一樣
+function toSizeByPot(body: Img, potTarget: number): Img {
+  const r = potTarget / potWidth(body)
+  const w = Math.min(SIZE, Math.max(1, Math.round(body.width * r))), h = Math.min(SIZE, Math.max(1, Math.round(body.height * r)))
+  const sprite = modeScale(body, w, h)
+  const out = blank(SIZE, SIZE, [0, 0, 0, 0])
+  const ox = Math.floor((SIZE - w) / 2), oy = SIZE - h
+  for (let y = 0; y < h; y++) out.data.set(sprite.data.subarray(y * w * 4, (y + 1) * w * 4), ((y + oy) * SIZE + ox) * 4)
+  return out
+}
+
 function toHd(body: Img, scale?: number): Img {
   const r = scale ?? Math.min(HD_FIT / body.width, HD_FIT / body.height)
   const w = Math.max(1, Math.round(body.width * r)), h = Math.max(1, Math.round(body.height * r))
@@ -545,14 +584,19 @@ function main(argv: string[]): number {
     const grid = infos.filter(f => f.mode === 'grid')
     const median = (v: number[]) => [...v].sort((a, b) => a - b)[v.length >> 1]!
     const ref = grid.length ? { bx: median(grid.map(f => f.bx)), by: median(grid.map(f => f.by)) } : null
+    const potTarget = sheet.potAnchor && grid.length ? median(grid.map(f => potWidth(f.img))) : null
     sheet.cells.forEach((name, i) => {
       let info = infos[i]!
       if (ref && (Math.abs(info.bx / ref.bx - 1) > 0.1 || Math.abs(info.by / ref.by - 1) > 0.1)) {
         console.log(`  ${name}: 色塊 ${info.bx.toFixed(2)}×${info.by.toFixed(2)} 與多數格不同，改用 ${ref.bx.toFixed(2)}×${ref.by.toFixed(2)}`)
         info = toSize(cells[i]!, ref)
       }
-      images.set(name, info.img)
       const body = hdBody(cells[i]!)
+      if (info.mode === 'fallback' && potTarget && body) {
+        console.log(`  ${name}: 對不上格線，改用原圖眾數縮小，鍋寬對齊 ${potTarget}`)
+        info = { ...info, img: toSizeByPot(body, potTarget) }
+      }
+      images.set(name, info.img)
       if (body && sheet.potAnchor) anchored.set(name, body)
       else if (body) hd.set(name, toHd(body))
       console.log(`  ${name}: ${info.mode} 色塊 ${info.bx.toFixed(2)}×${info.by.toFixed(2)}，格線分數 ${info.scoreX.toFixed(2)}/${info.scoreY.toFixed(2)}`)
