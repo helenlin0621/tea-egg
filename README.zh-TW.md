@@ -10,11 +10,23 @@
 
 ## 安裝
 
+在 Claude Code 裡輸入：
+
 ```
-/plugin install tea-egg --marketplace helenlin0621/tea-egg
+/plugin marketplace add helenlin0621/tea-egg
+/plugin install tea-egg@tea-egg
 ```
 
 需要 Claude Code 2.1.289 以上（可用 `claude update` 更新）。
+
+## 更新
+
+```
+/plugin marketplace update tea-egg
+/plugin update tea-egg@tea-egg
+```
+
+完成後重新啟動 Claude Code。
 
 ## 指令
 
@@ -45,8 +57,12 @@
 
 | 網路 | 執行程式 | 讀寫檔案 | 呼叫 AI | 傳送資料 | 阻擋或修改指令 |
 |---|---|---|---|---|---|
-| No | No | No | No | No | No |
+| 否 | 否 | 否 | 否 | 否 | 否 |
 
 - 這個 Mod 只「看」Bash／PowerShell 指令的文字與成功與否，用來判斷有沒有跑測試、有沒有下危險指令；比對清單公開在 `hooks/detect.ts`。
 - 所有資料只存在 Claude Code 為這個 Mod 保留的本機儲存區。
 - 圖鑑內容經過編碼以防劇透，詳見 `hooks/spoilers.ts` 開頭說明。
+
+## 授權
+
+MIT，詳見 [LICENSE](LICENSE)。

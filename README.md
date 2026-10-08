@@ -10,11 +10,23 @@ Raise an egg soaking in tea broth inside Claude Code while you code. Every task 
 
 ## Install
 
+In Claude Code, run:
+
 ```
-/plugin install tea-egg --marketplace helenlin0621/tea-egg
+/plugin marketplace add helenlin0621/tea-egg
+/plugin install tea-egg@tea-egg
 ```
 
 Requires Claude Code 2.1.289 or later (update with `claude update`).
+
+## Update
+
+```
+/plugin marketplace update tea-egg
+/plugin update tea-egg@tea-egg
+```
+
+Then restart Claude Code.
 
 ## Commands
 
@@ -50,3 +62,7 @@ The language is picked when a session starts. Eggs you already have keep their n
 - The Mod only "looks at" the text of Bash/PowerShell commands and whether they succeeded, to tell whether you ran tests or a dangerous command. The full list of patterns is public in `hooks/detect.ts`.
 - All data stays in the local storage Claude Code sets aside for this Mod.
 - The dex contents are encoded to avoid spoilers; see the note at the top of `hooks/spoilers.ts`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
