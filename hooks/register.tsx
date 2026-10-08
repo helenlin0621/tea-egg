@@ -46,6 +46,16 @@ const ioOf = ($: EngineInterface): StoreIo => ({
   },
 })
 
+// 側邊面板開關：/egg 與橫條按鈕共用；回傳開關後的狀態
+async function togglePane($: EngineInterface): Promise<boolean> {
+  if ((await $.ui.panes()).some(p => p.id === PANE)) {
+    await $.ui.close({ id: PANE })
+    return false
+  }
+  await $.ui.open({ id: PANE, title: '茶葉蛋養成計畫' })
+  return true
+}
+
 // 每次載入只啟用一次；計時器握柄留著，重新註冊前先取消
 let tick: Timer | null = null
 
@@ -139,13 +149,23 @@ export const register: Register = on => {
       if (!save) return next(e)
       const now = await $.clock.now()
       const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
-      const segs = fitSegments(bandSegments(save, localNow(now), now), columns)
-      const { Box, Text } = $.ui.resolve(e)
+      // 右邊留 6 格給「面板」按鈕（空白 1 格＋全形 2 字＋邊距）
+      const segs = fitSegments(bandSegments(save, localNow(now), now), Math.max(10, columns - 6))
+      const { Box, Text, Button } = $.ui.resolve(e)
+      const onPanel = async () => {
+        try {
+          await togglePane($)
+        } catch {
+          // 按鈕出錯不影響使用者
+        }
+      }
       return (
         <Box>
           {segs.map((seg, i) => (
             <Text key={String(i)} color={seg.color} dimColor={seg.dim}>{seg.text}</Text>
           ))}
+          <Text key="gap"> </Text>
+          <Button key="panel" label="面板" plain dimColor onPress={onPanel} />
         </Box>
       )
     } catch {
@@ -221,15 +241,7 @@ export const register: Register = on => {
       if (!interactive && e.origin.kind !== 'plugin') await activate($)
       if (!interactive) return { text: TEXT.help }
       const args = e.args.trim()
-      if (args === '') {
-        const isOpen = (await $.ui.panes()).some(p => p.id === PANE)
-        if (isOpen) {
-          await $.ui.close({ id: PANE })
-          return { text: TEXT.paneClosed }
-        }
-        await $.ui.open({ id: PANE, title: '茶葉蛋養成計畫' })
-        return { text: TEXT.paneOpened }
-      }
+      if (args === '') return { text: (await togglePane($)) ? TEXT.paneOpened : TEXT.paneClosed }
       // 開發用預覽：只切換顯示的圖，不讀也不改存檔
       if (args === 'preview' || args.startsWith('preview ')) {
         const current = (await $.state.get(PREVIEW_REF)).value ?? null
