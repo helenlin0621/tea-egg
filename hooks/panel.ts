@@ -2,7 +2,7 @@ import type { Save } from '../types'
 import type { LocalTime } from './clock'
 import { compose, rasterCells, svgSource, SIZE, type Layer } from './pixels'
 import { decodeSpoilers } from './spoilers'
-import { FACE_BOX, PALETTE, SPRITES } from './sprites'
+import { FACE_BOX, ICON_PALETTE, PALETTE, SPRITES } from './sprites'
 import { SPRITES_HD } from './sprites-hd'
 import { T } from './text'
 import { FACE_TEXT, bar, faceOf, hintOf, stageOf, strWidth } from './view'
@@ -38,10 +38,10 @@ export function eggLayers(s: Save, t: LocalTime, now: number): Layer[] {
   return layers
 }
 
-function artOf(pixels: string, surface: string): Art {
+function artOf(pixels: string, surface: string, palette: readonly number[] = PALETTE): Art {
   return surface === 'terminal'
-    ? { kind: 'raster', cells: rasterCells(pixels, PALETTE) }
-    : { kind: 'svg', source: svgSource(pixels, PALETTE, SVG_SCALE, SVG_BACKGROUND) }
+    ? { kind: 'raster', cells: rasterCells(pixels, palette) }
+    : { kind: 'svg', source: svgSource(pixels, palette, SVG_SCALE, SVG_BACKGROUND) }
 }
 
 // Desktop: embed the original high-res PNG in an SVG when available (dark brown card + <image>), else fall back to the pixel SVG
@@ -122,7 +122,7 @@ export function previewArt(key: string, surface: string, columns: number): Art |
   return pixels ? artOf(pixels, surface) : null
 }
 
-// Dex sprites (art sets C/D) aren't drawn yet: return null when missing and the dex shows text only
+// Dex sprites (art sets C/D/E) use their own ICON_PALETTE; return null when one is missing and the dex shows text only
 export function dexArt(id: string, owned: boolean, surface: string): Art | null {
   const pixels = owned ? decodeSpoilers().sprites[id] : SPRITES.locked
   if (!pixels) return null
@@ -130,7 +130,7 @@ export function dexArt(id: string, owned: boolean, surface: string): Art | null 
     const hd = hdArt(owned ? decodeSpoilers().spritesHd?.[id] : SPRITES_HD.locked)
     if (hd) return hd
   }
-  return artOf(pixels, surface)
+  return artOf(pixels, surface, ICON_PALETTE)
 }
 
 export function panelLines(s: Save, t: LocalTime, now: number): string[] {

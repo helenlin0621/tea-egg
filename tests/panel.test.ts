@@ -94,3 +94,15 @@ test('Desktop uses <image> when a high-res sprite exists, and every SVG stays un
   // Public sprites: SVG length with the HD string embedded twice
   for (const b64 of Object.values(SPRITES_HD)) expect(b64.length * 2 + 600).toBeLessThan(131072)
 })
+
+test('Every dex slot has art on both surfaces, locked and owned', async () => {
+  for (const id of decodeSpoilers().dexSlots) {
+    for (const surface of ['terminal', 'desktop']) {
+      expect(dexArt(id, true, surface)).not.toBe(null)
+      expect(dexArt(id, false, surface)).not.toBe(null)
+    }
+  }
+  // Terminal dex icons draw with their own palette: no cell falls back to a missing color
+  const art = dexArt(decodeSpoilers().dexSlots[0]!, true, 'terminal')
+  expect(art?.kind === 'raster' && !art.cells.includes('undefined')).toBe(true)
+})
