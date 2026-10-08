@@ -1,8 +1,8 @@
 {
   "name": "tea-egg",
   "owner": { "name": "helenlin0621" },
-  "description": "茶葉蛋養成計畫 Claude Code Mod",
+  "description": "Tea Egg, a Claude Code Mod",
   "plugins": [
-    { "name": "tea-egg", "source": "./", "description": "茶葉蛋養成計畫：寫 code 時養一顆慢慢入味的蛋" }
+    { "name": "tea-egg", "source": "./", "description": "Tea Egg: raise a pet egg that slowly marinates while you code" }
   ]
 }

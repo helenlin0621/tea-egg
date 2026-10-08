@@ -1,38 +1,52 @@
-# 🥚 茶葉蛋養成計畫（tea-egg）
+# 🥚 Tea Egg (tea-egg)
 
-寫 code 的時候，在 Claude Code 裡養一顆泡在滷汁裡的蛋。你每完成一件事，蛋就入味一點；大約一週後出鍋。
+[繁體中文](README.zh-TW.md)
+
+Raise an egg soaking in tea broth inside Claude Code while you code. Every task you finish lets the flavor sink in a little more; in about a week it's done marinating.
 
 ```
- 🥚(•ᴗ•)  小蛋 #3 ｜ 入味 ██████░░░░ 62% ｜ 滷汁 ███░░ ｜ 茶香越來越濃了…
+ 🥚(•ᴗ•)  Eggy #3 | Flavor ██████░░░░ 62% | Broth ███░░ | Smells of tea…
 ```
 
-## 安裝
+## Install
 
 ```
 /plugin install tea-egg --marketplace helenlin0621/tea-egg
 ```
 
-需要 Claude Code 2.1.289 以上（可用 `claude update` 更新）。
+Requires Claude Code 2.1.289 or later (update with `claude update`).
 
-## 指令
+## Commands
 
-| 指令 | 功能 |
+| Command | What it does |
 |---|---|
-| `/egg` | 開啟／關閉面板 |
-| `/egg refill` | 加滷汁 |
-| `/egg flip` | 翻面 |
-| `/egg dex` | 顯示圖鑑 |
-| `/egg name <名字>` | 幫目前的蛋取名 |
-| `/egg help` | 說明 |
+| `/egg` | Open/close the panel |
+| `/egg refill` | Top up the broth |
+| `/egg flip` | Flip the egg |
+| `/egg dex` | Show the Eggdex |
+| `/egg name <name>` | Name the current egg |
+| `/egg help` | Help |
 
-出鍋結果由你的寫 code 習慣決定，蒐集全部的蛋吧！
+How your egg turns out depends on your coding habits. Collect them all!
 
-## 安全
+## Language
 
-| 網路 | 執行程式 | 讀寫檔案 | 呼叫 AI | 傳送資料 | 阻擋或修改指令 |
+The UI follows your system language: Chinese locales get Traditional Chinese, everything else gets English. To choose one yourself, set `TEA_EGG_LANG` to `en` or `zh-TW` before starting Claude Code:
+
+| Shell | Command |
+|---|---|
+| macOS / Linux | `TEA_EGG_LANG=en claude` |
+| Windows cmd | `set TEA_EGG_LANG=en` then `claude` |
+| Windows PowerShell | `$env:TEA_EGG_LANG = "en"` then `claude` |
+
+The language is picked when a session starts. Eggs you already have keep their names.
+
+## Security
+
+| Network | Runs programs | Reads/writes files | Calls AI | Sends data | Blocks or changes commands |
 |---|---|---|---|---|---|
 | No | No | No | No | No | No |
 
-- 這個 Mod 只「看」Bash／PowerShell 指令的文字與成功與否，用來判斷有沒有跑測試、有沒有下危險指令；比對清單公開在 `hooks/detect.ts`。
-- 所有資料只存在 Claude Code 為這個 Mod 保留的本機儲存區。
-- 圖鑑內容經過編碼以防劇透，詳見 `hooks/spoilers.ts` 開頭說明。
+- The Mod only "looks at" the text of Bash/PowerShell commands and whether they succeeded, to tell whether you ran tests or a dangerous command. The full list of patterns is public in `hooks/detect.ts`.
+- All data stays in the local storage Claude Code sets aside for this Mod.
+- The dex contents are encoded to avoid spoilers; see the note at the top of `hooks/spoilers.ts`.
