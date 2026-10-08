@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { bandSegments, bar, faceOf, fitSegments, stageOf, strWidth, truncate } from '../hooks/view'
+import { bandSegments, bar, faceOf, fitSegments, STAGE_COLOR, stageOf, strWidth, truncate } from '../hooks/view'
 import { newSave } from '../hooks/model'
 import { at, ms } from './helpers'
 
@@ -68,5 +68,19 @@ test('When too narrow, whole segments drop from the right and the result fits', 
   for (const cols of [10, 20, 40, 80]) {
     const fitted = fitSegments(bandSegments(s, at('2026-10-07', 14), NOW), cols)
     expect(strWidth(text(fitted)) <= cols).toBe(true)
+  }
+})
+
+// The face sat in near-white and vanished on light themes: every fixed color must hold 2.5:1 against both a white and a near-black background
+test('Band face colors stay readable on light and dark themes', async () => {
+  const lum = (hex: string) => {
+    const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+    return 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!
+  }
+  const contrast = (a: number, b: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+  for (const color of STAGE_COLOR) {
+    if (color === undefined) continue
+    expect(contrast(lum(color), 1)).toBeGreaterThan(2.5)
+    expect(contrast(lum(color), lum('#1e1e1e'))).toBeGreaterThan(2.5)
   }
 })

@@ -36,8 +36,9 @@ export function stageOf(progress: number): 0 | 1 | 2 | 3 {
   return 3
 }
 
-// Matches the pixel art: 40–69% light amber, 70% and up light brown
-export const STAGE_COLOR = ['#f2efe6', '#f2efe6', '#f0c9a2', '#c98f5c'] as const
+// Face color by stage. The band is drawn on light and dark themes alike and render can't tell which,
+// so raw eggs keep the default text color (no color) and the brown stages are mid-tones readable on both
+export const STAGE_COLOR = [undefined, undefined, '#c98f5c', '#9a6230'] as const
 
 function charWidth(cp: number): number {
   if ((cp >= 0x0300 && cp <= 0x036f) || cp === 0xfe0f || cp === 0x200d) return 0
