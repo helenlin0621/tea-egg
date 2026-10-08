@@ -33,12 +33,13 @@ test('Raster: indices 10–31 decode from a–v (base-32)', async () => {
   expect(words.slice(0, 3)).toEqual([0x2580, 10, 31])
 })
 
-test('SVG: adjacent same-color pixels merge; transparent pixels are not drawn', async () => {
-  const px = set(set(set(blank, 0, 0, '0'), 1, 0, '0'), 3, 0, '1')
+test('SVG: one path per color, adjacent same-color pixels merge; transparent pixels are not drawn', async () => {
+  const px = set(set(set(set(blank, 0, 0, '0'), 1, 0, '0'), 3, 0, '1'), 0, 1, '0')
   const svg = svgSource(px, PAL, 4)
   expect(svg.startsWith('<svg')).toBe(true)
-  expect(svg.split('<rect').length - 1).toBe(2)
-  expect(svg.includes('width="2"')).toBe(true)
+  expect(svg.split('<path').length - 1).toBe(2)
+  expect(svg.includes('M0 0h2v1h-2z')).toBe(true)
+  expect(svg.includes('M0 1h1v1h-1z')).toBe(true)
   expect(svg.includes('#ff00ff')).toBe(false)
 })
 

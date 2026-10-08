@@ -83,16 +83,23 @@ test('Desktop uses <image> when a high-res sprite exists, and every SVG stays un
   expect(eggArt(newSave(NOW), at('2026-10-07', 14), NOW, 'terminal', 50).kind).toBe('raster')
   const ids = [...Object.keys(SPRITES_HD), ...Object.keys(decodeSpoilers().spritesHd ?? {})]
   expect(ids.length).toBeGreaterThan(0)
-  for (const id of Object.keys(SPRITES_HD)) {
-    const a = dexArt(id, false, 'desktop')
-    if (id === 'locked') expect(a?.kind === 'svg' && a.source.length < 131072).toBe(true)
-  }
-  for (const id of Object.keys(decodeSpoilers().spritesHd ?? {})) {
-    const a = dexArt(id, true, 'desktop')
-    expect(a?.kind === 'svg' && a.source.includes('<image') && a.source.length < 131072).toBe(true)
-  }
   // Public sprites: SVG length with the HD string embedded twice
   for (const b64 of Object.values(SPRITES_HD)) expect(b64.length * 2 + 600).toBeLessThan(131072)
+})
+
+// Desktop drops the whole pane when the tree is too big (the dex with 9 HD icons came to ~450 KB):
+// the dex row draws pixel SVGs, and all 9 together stay within about one HD egg's size
+test('Desktop dex icons are pixel SVGs and the whole row stays under 64000 chars', async () => {
+  const slots = decodeSpoilers().dexSlots
+  for (const owned of [true, false]) {
+    let total = 0
+    for (const id of slots) {
+      const a = dexArt(id, owned, 'desktop')
+      expect(a?.kind === 'svg' && !a.source.includes('<image')).toBe(true)
+      if (a?.kind === 'svg') total += a.source.length
+    }
+    expect(total).toBeLessThan(64000)
+  }
 })
 
 test('Every dex slot has art on both surfaces, locked and owned', async () => {

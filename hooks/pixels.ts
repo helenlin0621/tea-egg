@@ -56,7 +56,8 @@ const hex = (n: number) => '#' + n.toString(16).padStart(6, '0')
 
 // background: put a rounded backing card under the pixels (so the white steam shows up on light themes)
 export function svgSource(pixels: string, palette: readonly number[], scale: number, background?: string): string {
-  const rects: string[] = background ? [`<rect width="${SIZE}" height="${SIZE}" rx="3" fill="${background}"/>`] : []
+  // One <path> per color, each horizontal run a subpath: about a quarter the size of one <rect> per run
+  const runs = new Map<string, string[]>()
   for (let y = 0; y < SIZE; y++) {
     let x = 0
     while (x < SIZE) {
@@ -64,10 +65,16 @@ export function svgSource(pixels: string, palette: readonly number[], scale: num
       const fill = color(c, palette)
       let run = 1
       while (x + run < SIZE && pixels[y * SIZE + x + run] === c) run++
-      if (fill !== null) rects.push(`<rect x="${x}" y="${y}" width="${run}" height="1" fill="${hex(fill)}"/>`)
+      if (fill !== null) {
+        const key = hex(fill)
+        if (!runs.has(key)) runs.set(key, [])
+        runs.get(key)!.push(`M${x} ${y}h${run}v1h-${run}z`)
+      }
       x += run
     }
   }
+  const back = background ? `<rect width="${SIZE}" height="${SIZE}" rx="3" fill="${background}"/>` : ''
+  const paths = [...runs].map(([fill, d]) => `<path fill="${fill}" d="${d.join('')}"/>`).join('')
   const px = SIZE * scale
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${px}" height="${px}" shape-rendering="crispEdges">${rects.join('')}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${px}" height="${px}" shape-rendering="crispEdges">${back}${paths}</svg>`
 }

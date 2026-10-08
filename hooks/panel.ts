@@ -122,14 +122,11 @@ export function previewArt(key: string, surface: string, columns: number): Art |
   return pixels ? artOf(pixels, surface) : null
 }
 
-// Dex sprites (art sets C/D/E) use their own ICON_PALETTE; return null when one is missing and the dex shows text only
+// Dex sprites (art sets C/D/E) use their own ICON_PALETTE; return null when one is missing and the dex shows text only.
+// Always the pixel SVG on desktop: 9 HD icons made the pane too big and desktop drew nothing at all
 export function dexArt(id: string, owned: boolean, surface: string): Art | null {
   const pixels = owned ? decodeSpoilers().sprites[id] : SPRITES.locked
   if (!pixels) return null
-  if (surface !== 'terminal') {
-    const hd = hdArt(owned ? decodeSpoilers().spritesHd?.[id] : SPRITES_HD.locked)
-    if (hd) return hd
-  }
   return artOf(pixels, surface, ICON_PALETTE)
 }
 
