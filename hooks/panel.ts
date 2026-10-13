@@ -75,34 +75,47 @@ export function eggArt(s: Save, t: LocalTime, now: number, surface: string, colu
   return artOf(compose(layers), surface)
 }
 
-// Dev preview: step through each bare base, then each face stacked on the raw-egg base (with steam as in play), without reading or changing the save
-export const PREVIEW_KEYS = [
-  'base0', 'base1', 'base2', 'base3', 'base0_dry', 'base1_dry', 'base2_dry', 'base3_dry',
-  'face_happy', 'face_normal', 'face_bored', 'face_cry', 'face_sleep', 'face_flip', 'face_done',
-] as const
+// Dev preview: every picture the game can actually show, as "<base>+<face>", without reading or changing the save.
+// Dry broth outranks every face except sleep and done, and done only follows a harvest (a fresh raw egg)
+const PLAY_FACES = ['face_happy', 'face_normal', 'face_bored', 'face_sleep', 'face_flip'] as const
+export const PREVIEW_KEYS: readonly string[] = [
+  ...[0, 1, 2, 3].flatMap(n => [...PLAY_FACES, ...(n === 0 ? ['face_done'] : [])].map(f => `base${n}+${f}`)),
+  ...[0, 1, 2, 3].flatMap(n => ['face_cry', 'face_sleep'].map(f => `base${n}_dry+${f}`)),
+]
 
-// Each label is read in the current language when accessed
+// "Stage label + face label", read in the current language when accessed
 export const PREVIEW_LABELS: Readonly<Record<string, string>> = Object.defineProperties(
   {},
-  Object.fromEntries(PREVIEW_KEYS.map(key => [key, { enumerable: true, get: () => T().previewLabels[key] }])),
+  Object.fromEntries(
+    PREVIEW_KEYS.map(key => {
+      const [base, face] = key.split('+') as [string, string]
+      return [key, { enumerable: true, get: () => `${T().previewLabels[base]} + ${T().previewLabels[face]}` }]
+    }),
+  ),
 )
 
-// Pick the preview from the command argument: empty = next, number = nth (1-based), or a sprite name; off = stop
+// Pick the preview from the command argument: empty/next = next, prev = previous, number = nth (1-based), or a sprite name; off = stop
+const NEXT_WORDS = ['', 'next', '下一張']
+const PREV_WORDS = ['prev', '上一張']
+
 export function nextPreview(current: string | null, arg: string): string | null | undefined {
-  const a = arg.trim()
+  const a = arg.trim().toLowerCase()
   if (a === 'off') return null
-  if (a === '') {
-    const i = current === null ? -1 : PREVIEW_KEYS.indexOf(current as (typeof PREVIEW_KEYS)[number])
-    return PREVIEW_KEYS[(i + 1) % PREVIEW_KEYS.length]
+  const step = NEXT_WORDS.includes(a) ? 1 : PREV_WORDS.includes(a) ? -1 : 0
+  if (step !== 0) {
+    const n = PREVIEW_KEYS.length
+    const i = current === null ? (step > 0 ? -1 : 0) : PREVIEW_KEYS.indexOf(current)
+    return PREVIEW_KEYS[(i + step + n) % n]
   }
   const n = Number(a)
   if (Number.isInteger(n) && n >= 1 && n <= PREVIEW_KEYS.length) return PREVIEW_KEYS[n - 1]
-  return (PREVIEW_KEYS as readonly string[]).includes(a) ? a : undefined
+  return PREVIEW_KEYS.includes(a) ? a : undefined
 }
 
 export function previewArt(key: string, surface: string, columns: number): Art | null {
   if (surface === 'terminal' && columns < SIZE) return null
-  const layers = layersOf(key.startsWith('face_') ? stackKeys('base0', key) : [key])
+  const [base, face] = key.split('+')
+  const layers = base && face ? layersOf(stackKeys(base, face)) : []
   return layers.length ? artOf(compose(layers), surface) : null
 }
 

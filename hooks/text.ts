@@ -108,8 +108,8 @@ const ZH: Text = {
     face_done: '表情：剛出鍋',
   },
   previewBanner: '預覽 {n}/{total}：{label}（不影響存檔）',
-  previewReply: '預覽 {n}/{total}：{label}（/egg preview 下一張、/egg preview off 結束）',
-  previewUsage: '用法：/egg preview [1-{total}|off]',
+  previewReply: '預覽 {n}/{total}：{label}（/egg preview next 下一張、prev 上一張、off 結束）',
+  previewUsage: '用法：/egg preview next（下一張，next 可省略）｜prev（上一張）｜1-{total}（跳到第幾張）｜off（結束）',
   previewOff: '已結束預覽',
 }
 
@@ -179,8 +179,8 @@ const EN: Text = {
     face_done: 'Face: just done',
   },
   previewBanner: 'Preview {n}/{total}: {label} (save not affected)',
-  previewReply: 'Preview {n}/{total}: {label} (/egg preview for the next one, /egg preview off to stop)',
-  previewUsage: 'Usage: /egg preview [1-{total}|off]',
+  previewReply: 'Preview {n}/{total}: {label} (/egg preview next, prev, or off to stop)',
+  previewUsage: 'Usage: /egg preview next (or nothing) | prev | 1-{total} (jump) | off (stop)',
   previewOff: 'Preview ended',
 }
 

@@ -32,7 +32,7 @@ const storeKey = () => (clock.fake ? FAKE_STORE_KEY : STORE_KEY)
 
 // "Preview n/total: label" in the current language
 function previewText(template: string, key: string): string {
-  const n = PREVIEW_KEYS.indexOf(key as (typeof PREVIEW_KEYS)[number]) + 1
+  const n = PREVIEW_KEYS.indexOf(key) + 1
   return fill(template, { n: String(n), total: String(PREVIEW_KEYS.length), label: PREVIEW_LABELS[key] ?? key })
 }
 
