@@ -4,8 +4,10 @@
 //         art-build/preview.png (each sprite 4x on dark gray in one row, for manual review),
 //         art-build/terminal/<name>.png (terminal sprites at native 48×48 on magenta, as a base for manual touch-ups)
 // Hand-edited terminal sprites: when art-source/terminal/<name>.png (48×48, magenta 255,0,255 = transparent) exists, it's used as is instead of being computed from the sheet
+// Egg layers: every art-source/layers/<name>.png (48×48, transparent or magenta background) becomes sprite <name> as drawn and feeds the main palette.
+//   The panel stacks them at runtime: base<stage>[_dry] (pot + egg, no face) under face_<face> (face only)
 // Usage: npm run sprites [-- --source DIR]
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pngjs from 'pngjs'
@@ -330,11 +332,16 @@ function quantize(images: Map<string, Img>, paletteFrom: Map<string, Img> = imag
     }
     return out
   }
-  const base = pixels(paletteFrom.values())
-  const raw = medianCut(base, COLORS)
-  protectRare(raw, base)
-  // Second pass looks only at hand-edited sprites: nothing changes when they reuse existing colors; only new colors get added
-  protectRare(raw, pixels([...images].filter(([n, img]) => paletteFrom.get(n) !== img).map(([, img]) => img)))
+  // Hand-drawn art that already fits in COLORS keeps its exact colors (the median cut would average neighbours together)
+  const distinct = [...new Map(pixels(images.values()).map(c => [c.join(), c] as const)).values()]
+  let raw = distinct
+  if (distinct.length > COLORS) {
+    const base = pixels(paletteFrom.values())
+    raw = medianCut(base, COLORS)
+    protectRare(raw, base)
+    // Second pass looks only at hand-edited sprites: nothing changes when they reuse existing colors; only new colors get added
+    protectRare(raw, pixels([...images].filter(([n, img]) => paletteFrom.get(n) !== img).map(([, img]) => img)))
+  }
   const index = new Map<string, number[]>()
   const used = new Set<number>()
   for (const [name, img] of images) {
@@ -607,6 +614,18 @@ function writeHdPreview(path: string, images: Map<string, Img>): void {
   writeFileSync(path, PNG.sync.write(png))
 }
 
+// A hand-drawn 48×48 PNG: magenta or alpha < 128 becomes transparent, everything else opaque; null if the size is wrong
+function readNative(file: string): Img | null {
+  const png = PNG.sync.read(readFileSync(file))
+  if (png.width !== SIZE || png.height !== SIZE) return null
+  const img: Img = { width: SIZE, height: SIZE, data: new Uint8Array(png.data) }
+  for (let i = 0; i < img.data.length; i += 4) {
+    if (isMagenta([img.data[i]!, img.data[i + 1]!, img.data[i + 2]!, img.data[i + 3]!])) img.data.set([0, 0, 0, 0], i)
+    else img.data[i + 3] = 255
+  }
+  return img
+}
+
 function main(argv: string[]): number {
   const at = argv.indexOf('--source')
   const src = resolve(ROOT, at >= 0 && argv[at + 1] ? argv[at + 1]! : 'art-source')
@@ -666,19 +685,27 @@ function main(argv: string[]): number {
     hd.set(name, { width: png.width, height: png.height, data: png.data })
     console.log(`  ${name}: high-res sprite from ${file}`)
   }
+  const layerDir = join(src, 'layers')
+  const layerNames = new Set<string>()
+  for (const file of existsSync(layerDir) ? readdirSync(layerDir).filter(f => f.endsWith('.png')).sort() : []) {
+    const name = file.slice(0, -'.png'.length)
+    const img = readNative(join(layerDir, file))
+    if (!img) {
+      console.error(`layers/${file}: an egg layer must be ${SIZE}×${SIZE}`)
+      return 1
+    }
+    images.set(name, img)
+    layerNames.add(name)
+    console.log(`  ${name}: layer from layers/${file}`)
+  }
   const auto = new Map(images)
   for (const name of auto.keys()) {
     const file = join(src, 'terminal', `${name}.png`)
-    if (!existsSync(file)) continue
-    const png = PNG.sync.read(readFileSync(file))
-    if (png.width !== SIZE || png.height !== SIZE) {
+    if (layerNames.has(name) || !existsSync(file)) continue
+    const img = readNative(file)
+    if (!img) {
       console.error(`terminal/${name}.png: a hand-edited terminal sprite must be ${SIZE}×${SIZE}`)
       return 1
-    }
-    const img: Img = { width: SIZE, height: SIZE, data: new Uint8Array(png.data) }
-    for (let i = 0; i < img.data.length; i += 4) {
-      if (isMagenta([img.data[i]!, img.data[i + 1]!, img.data[i + 2]!, img.data[i + 3]!])) img.data.set([0, 0, 0, 0], i)
-      else img.data[i + 3] = 255
     }
     images.set(name, img)
     console.log(`  ${name}: terminal sprite from terminal/${name}.png`)

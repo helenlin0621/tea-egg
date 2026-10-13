@@ -2,10 +2,9 @@ import type { Save } from '../types'
 import type { LocalTime } from './clock'
 import { compose, rasterCells, svgSource, SIZE, type Layer } from './pixels'
 import { decodeSpoilers } from './spoilers'
-import { FACE_BOX, ICON_PALETTE, PALETTE, SPRITES } from './sprites'
-import { SPRITES_HD } from './sprites-hd'
+import { ICON_PALETTE, PALETTE, SPRITES } from './sprites'
 import { T } from './text'
-import { FACE_TEXT, bar, faceOf, hintOf, stageOf, strWidth } from './view'
+import { FACE_TEXT, bar, faceOf, hintOf, stageOf, strWidth, type Face } from './view'
 
 // The bigger the pixel art, the coarser it looks; 3x (144px) looks the most refined
 const SVG_SCALE = 3
@@ -22,40 +21,28 @@ export const ASCII_EGG: readonly string[][] = [
 
 export type Art = { kind: 'raster'; cells: string } | { kind: 'svg'; source: string } | { kind: 'ascii'; lines: string[] }
 
-// The stage sprites already have a smiling face: happy/normal use the stage sprite, other faces use the full face_<face> sprite.
-// No face overlay (FACE_BOX is null); still returns a layer array so growth-hint layers can be appended later
-function eggSpriteKey(s: Save, t: LocalTime, now: number): string {
-  const face = faceOf(s, t, now)
-  return face === 'happy' || face === 'normal' ? `stage${stageOf(s.egg.progress)}` : `face_${face}`
+// The egg is two layers: the pot + egg for the stage (the dry-pot version once the broth runs out), then the face on top.
+// The same face sheet fits every base, so a face never changes the egg's color
+function baseKey(s: Save): string {
+  return `base${stageOf(s.egg.progress)}${s.egg.broth <= 0 ? '_dry' : ''}`
+}
+
+function faceKey(face: Face): string {
+  return `face_${face === 'dry' ? 'cry' : face}`
+}
+
+function layersOf(keys: readonly string[]): Layer[] {
+  return keys.flatMap(k => (SPRITES[k] ? [{ pixels: SPRITES[k] }] : []))
 }
 
 export function eggLayers(s: Save, t: LocalTime, now: number): Layer[] {
-  const key = eggSpriteKey(s, t, now)
-  const base = SPRITES[key]
-  const layers: Layer[] = []
-  // The FACE_BOX branch is unused for now; kept for future overlay layers
-  if (base) layers.push(FACE_BOX && key.startsWith('face_') ? { pixels: base, box: FACE_BOX } : { pixels: base })
-  return layers
+  return layersOf([baseKey(s), faceKey(faceOf(s, t, now))])
 }
 
 function artOf(pixels: string, surface: string, palette: readonly number[] = PALETTE): Art {
   return surface === 'terminal'
     ? { kind: 'raster', cells: rasterCells(pixels, palette) }
     : { kind: 'svg', source: svgSource(pixels, palette, SVG_SCALE, SVG_BACKGROUND) }
-}
-
-// Desktop: embed the original high-res PNG in an SVG when available (dark brown card + <image>), else fall back to the pixel SVG
-function hdArt(b64: string | undefined): Art | null {
-  if (!b64) return null
-  const href = `data:image/png;base64,${b64}`
-  const px = SVG_PX
-  return {
-    kind: 'svg',
-    source:
-      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${px} ${px}" width="${px}" height="${px}">` +
-      `<rect width="${px}" height="${px}" rx="9" fill="${SVG_BACKGROUND}"/>` +
-      `<image width="${px}" height="${px}" href="${href}" xlink:href="${href}"/></svg>`,
-  }
 }
 
 const FACE_COLS = 4
@@ -79,17 +66,13 @@ export function eggArt(s: Save, t: LocalTime, now: number, surface: string, colu
     const face = fitWidth(FACE_TEXT[faceOf(s, t, now)].replace(/[()]/g, ''), FACE_COLS)
     return { kind: 'ascii', lines: [...ASCII_EGG[stage]!.map(l => l.replace('FACE', face)), `   ${T().stageNames[stage]}`] }
   }
-  if (surface !== 'terminal') {
-    const hd = hdArt(SPRITES_HD[eggSpriteKey(s, t, now)])
-    if (hd) return hd
-  }
   return artOf(compose(layers), surface)
 }
 
-// Dev preview: step through each public sprite without reading or changing the save
+// Dev preview: step through each base, then each face on the raw-egg base, without reading or changing the save
 export const PREVIEW_KEYS = [
-  'stage0', 'stage1', 'stage2', 'stage3',
-  'face_happy', 'face_normal', 'face_bored', 'face_dry', 'face_sleep', 'face_flip', 'face_done',
+  'base0', 'base1', 'base2', 'base3', 'base0_dry', 'base1_dry', 'base2_dry', 'base3_dry',
+  'face_happy', 'face_normal', 'face_bored', 'face_cry', 'face_sleep', 'face_flip', 'face_done',
 ] as const
 
 // Each label is read in the current language when accessed
@@ -112,14 +95,9 @@ export function nextPreview(current: string | null, arg: string): string | null 
 }
 
 export function previewArt(key: string, surface: string, columns: number): Art | null {
-  if (surface !== 'terminal') {
-    const hd = hdArt(SPRITES_HD[key])
-    if (hd) return hd
-  } else if (columns < SIZE) {
-    return null
-  }
-  const pixels = SPRITES[key]
-  return pixels ? artOf(pixels, surface) : null
+  if (surface === 'terminal' && columns < SIZE) return null
+  const layers = layersOf(key.startsWith('face_') ? ['base0', key] : [key])
+  return layers.length ? artOf(compose(layers), surface) : null
 }
 
 // Dex sprites (art sets C/D/E) use their own ICON_PALETTE; return null when one is missing and the dex shows text only.

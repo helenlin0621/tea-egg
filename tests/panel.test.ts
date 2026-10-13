@@ -3,7 +3,6 @@ import { ASCII_EGG, dexArt, eggArt, eggLayers, panelLines } from '../hooks/panel
 import { strWidth } from '../hooks/view'
 import { newSave } from '../hooks/model'
 import { SPRITES } from '../hooks/sprites'
-import { SPRITES_HD } from '../hooks/sprites-hd'
 import { decodeSpoilers } from '../hooks/spoilers'
 import { at, ms } from './helpers'
 
@@ -19,14 +18,30 @@ test('Desktop uses SVG', async () => {
   expect(eggArt(newSave(NOW), at('2026-10-07', 14), NOW, 'desktop', 40).kind).toBe('svg')
 })
 
-test('Happy uses the stage sprite; other faces use face sprites', async () => {
+test('The egg is the stage base with the face stacked on top', async () => {
   const s = newSave(NOW)
-  const happy = eggLayers(s, at('2026-10-07', 14), NOW)
-  expect(happy.length).toBe(1)
-  expect(happy[0]!.pixels).toBe(SPRITES.stage0)
+  const t = at('2026-10-07', 14)
+  expect(eggLayers(s, t, NOW).map(l => l.pixels)).toEqual([SPRITES.base0, SPRITES.face_happy])
+  s.egg.flipWantedAt = NOW
+  expect(eggLayers(s, t, NOW).map(l => l.pixels)).toEqual([SPRITES.base0, SPRITES.face_flip])
+  s.egg.progress = 90
+  expect(eggLayers(s, t, NOW)[0]!.pixels).toBe(SPRITES.base3)
+})
+
+test('Dry broth swaps in the dry pot; the face still follows its own rules', async () => {
+  const s = newSave(NOW)
   s.egg.broth = 0
-  const dry = eggLayers(s, at('2026-10-07', 14), NOW)
-  expect(dry[0]!.pixels).toBe(SPRITES.face_dry)
+  expect(eggLayers(s, at('2026-10-07', 14), NOW).map(l => l.pixels)).toEqual([SPRITES.base0_dry, SPRITES.face_cry])
+  // At night the face is asleep, but the pot stays dry
+  expect(eggLayers(s, at('2026-10-08', 2), ms('2026-10-08', 2)).map(l => l.pixels)).toEqual([SPRITES.base0_dry, SPRITES.face_sleep])
+})
+
+test('Every base and face layer exists', async () => {
+  for (const stage of [0, 1, 2, 3]) {
+    expect(SPRITES[`base${stage}`]).toBeDefined()
+    expect(SPRITES[`base${stage}_dry`]).toBeDefined()
+  }
+  for (const face of ['happy', 'normal', 'bored', 'cry', 'sleep', 'flip', 'done']) expect(SPRITES[`face_${face}`]).toBeDefined()
 })
 
 test('Dex art is null when the sprite is missing', async () => {
@@ -76,15 +91,12 @@ test('ASCII egg: equal-width rows at every stage, with backslash edges kept', as
   expect(ASCII_EGG[0]![3]!.includes('\\')).toBe(true)
 })
 
-test('Desktop uses <image> when a high-res sprite exists, and every SVG stays under 131072 chars', async () => {
-  const art = eggArt(newSave(NOW), at('2026-10-07', 14), NOW, 'desktop', 40)
-  expect(art.kind).toBe('svg')
-  if (art.kind === 'svg') expect(art.source.includes('<image')).toBe(true)
-  expect(eggArt(newSave(NOW), at('2026-10-07', 14), NOW, 'terminal', 50).kind).toBe('raster')
-  const ids = [...Object.keys(SPRITES_HD), ...Object.keys(decodeSpoilers().spritesHd ?? {})]
-  expect(ids.length).toBeGreaterThan(0)
-  // Public sprites: SVG length with the HD string embedded twice
-  for (const b64 of Object.values(SPRITES_HD)) expect(b64.length * 2 + 600).toBeLessThan(131072)
+test('Desktop draws the egg as a pixel SVG well under the 131072-char limit', async () => {
+  const s = newSave(NOW)
+  s.egg.flipWantedAt = NOW
+  const art = eggArt(s, at('2026-10-07', 14), NOW, 'desktop', 40)
+  expect(art.kind === 'svg' && !art.source.includes('<image')).toBe(true)
+  if (art.kind === 'svg') expect(art.source.length).toBeLessThan(40000)
 })
 
 // Desktop drops the whole pane when the tree is too big (the dex with 9 HD icons came to ~450 KB):
