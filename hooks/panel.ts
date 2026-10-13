@@ -21,8 +21,9 @@ export const ASCII_EGG: readonly string[][] = [
 
 export type Art = { kind: 'raster'; cells: string } | { kind: 'svg'; source: string } | { kind: 'ascii'; lines: string[] }
 
-// The egg is two layers: the pot + egg for the stage (the dry-pot version once the broth runs out), then the face on top.
-// The same face sheet fits every base, so a face never changes the egg's color
+// The egg is stacked from layers: the pot + egg for the stage (the dry-pot version once the broth runs out),
+// then the steam, then the face. The same face sheet fits every base, so a face never changes the egg's color.
+// No steam over a dry pot, or with the flip face (its ↻ sits where the steam rises)
 function baseKey(s: Save): string {
   return `base${stageOf(s.egg.progress)}${s.egg.broth <= 0 ? '_dry' : ''}`
 }
@@ -31,12 +32,17 @@ function faceKey(face: Face): string {
   return `face_${face === 'dry' ? 'cry' : face}`
 }
 
+function stackKeys(base: string, face: string): string[] {
+  const steam = !base.endsWith('_dry') && face !== 'face_flip'
+  return [base, ...(steam ? ['steam'] : []), face]
+}
+
 function layersOf(keys: readonly string[]): Layer[] {
   return keys.flatMap(k => (SPRITES[k] ? [{ pixels: SPRITES[k] }] : []))
 }
 
 export function eggLayers(s: Save, t: LocalTime, now: number): Layer[] {
-  return layersOf([baseKey(s), faceKey(faceOf(s, t, now))])
+  return layersOf(stackKeys(baseKey(s), faceKey(faceOf(s, t, now))))
 }
 
 function artOf(pixels: string, surface: string, palette: readonly number[] = PALETTE): Art {
@@ -69,7 +75,7 @@ export function eggArt(s: Save, t: LocalTime, now: number, surface: string, colu
   return artOf(compose(layers), surface)
 }
 
-// Dev preview: step through each base, then each face on the raw-egg base, without reading or changing the save
+// Dev preview: step through each bare base, then each face stacked on the raw-egg base (with steam as in play), without reading or changing the save
 export const PREVIEW_KEYS = [
   'base0', 'base1', 'base2', 'base3', 'base0_dry', 'base1_dry', 'base2_dry', 'base3_dry',
   'face_happy', 'face_normal', 'face_bored', 'face_cry', 'face_sleep', 'face_flip', 'face_done',
@@ -96,7 +102,7 @@ export function nextPreview(current: string | null, arg: string): string | null 
 
 export function previewArt(key: string, surface: string, columns: number): Art | null {
   if (surface === 'terminal' && columns < SIZE) return null
-  const layers = layersOf(key.startsWith('face_') ? ['base0', key] : [key])
+  const layers = layersOf(key.startsWith('face_') ? stackKeys('base0', key) : [key])
   return layers.length ? artOf(compose(layers), surface) : null
 }
 

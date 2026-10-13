@@ -18,17 +18,18 @@ test('Desktop uses SVG', async () => {
   expect(eggArt(newSave(NOW), at('2026-10-07', 14), NOW, 'desktop', 40).kind).toBe('svg')
 })
 
-test('The egg is the stage base with the face stacked on top', async () => {
+test('The egg is the stage base, then steam, then the face', async () => {
   const s = newSave(NOW)
   const t = at('2026-10-07', 14)
-  expect(eggLayers(s, t, NOW).map(l => l.pixels)).toEqual([SPRITES.base0, SPRITES.face_happy])
+  expect(eggLayers(s, t, NOW).map(l => l.pixels)).toEqual([SPRITES.base0, SPRITES.steam, SPRITES.face_happy])
+  // The flip face's ↻ takes the steam's place
   s.egg.flipWantedAt = NOW
   expect(eggLayers(s, t, NOW).map(l => l.pixels)).toEqual([SPRITES.base0, SPRITES.face_flip])
   s.egg.progress = 90
   expect(eggLayers(s, t, NOW)[0]!.pixels).toBe(SPRITES.base3)
 })
 
-test('Dry broth swaps in the dry pot; the face still follows its own rules', async () => {
+test('Dry broth swaps in the dry pot without steam; the face still follows its own rules', async () => {
   const s = newSave(NOW)
   s.egg.broth = 0
   expect(eggLayers(s, at('2026-10-07', 14), NOW).map(l => l.pixels)).toEqual([SPRITES.base0_dry, SPRITES.face_cry])
@@ -42,6 +43,14 @@ test('Every base and face layer exists', async () => {
     expect(SPRITES[`base${stage}_dry`]).toBeDefined()
   }
   for (const face of ['happy', 'normal', 'bored', 'cry', 'sleep', 'flip', 'done']) expect(SPRITES[`face_${face}`]).toBeDefined()
+  expect(SPRITES.steam).toBeDefined()
+})
+
+test('Bases leave the steam area clear (steam is its own layer)', async () => {
+  const steamAt = [...SPRITES.steam!].flatMap((c, i) => (c === '.' ? [] : [i]))
+  for (const stage of [0, 1, 2, 3]) {
+    for (const key of [`base${stage}`, `base${stage}_dry`]) expect(steamAt.filter(i => SPRITES[key]![i] !== '.').length).toBe(0)
+  }
 })
 
 test('Dex art is null when the sprite is missing', async () => {
