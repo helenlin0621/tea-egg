@@ -19,6 +19,8 @@ In Claude Code, run:
 
 Requires Claude Code 2.1.289 or later (update with `claude update`).
 
+Play from the installed copy only. Claude keeps a separate save for each way a plugin is loaded, so Tea Egg stays off when loaded with `--plugin-dir` instead of starting a second save.
+
 ## Update
 
 ```

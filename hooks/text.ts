@@ -24,6 +24,7 @@ export type Text = {
   unknown: string
   error: string
   help: string
+  wrongLoad: string
   // Name shown on the pane and in the /egg command description
   title: string
   commandDescription: string
@@ -65,6 +66,7 @@ const ZH: Text = {
   paneOpened: '已開啟茶葉蛋面板',
   paneClosed: '已關閉茶葉蛋面板',
   bandHidden: '已隱藏橫條，輸入 /egg band 可再顯示',
+  wrongLoad: '茶葉蛋這次不是從安裝版載入（例如 --plugin-dir），為了不產生第二份存檔，本次不啟動。請改用 marketplace 安裝的版本。',
   bandShown: '已顯示橫條',
   unknown: '不認得這個指令，輸入 /egg help 看看',
   error: '蛋暫時聯絡不上，稍後再試 🥚',
@@ -136,6 +138,7 @@ const EN: Text = {
   paneOpened: 'Tea egg panel opened',
   paneClosed: 'Tea egg panel closed',
   bandHidden: 'Band hidden. Type /egg band to bring it back',
+  wrongLoad: 'Tea Egg was not loaded from its installed copy (e.g. --plugin-dir), so it stays off this session to avoid starting a second save. Use the marketplace install instead.',
   bandShown: 'Band shown',
   unknown: 'Unknown command. Try /egg help',
   error: "Can't reach the egg right now. Try again later 🥚",

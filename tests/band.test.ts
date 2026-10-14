@@ -2,7 +2,7 @@ import { test, expect, mock } from 'claude-code/testing'
 
 const START = { cwd: '.', surface: 'terminal', isInteractive: true } as const
 // Pin the language so the zh-TW expectations hold whatever the system locale
-const ZH = { TEA_EGG_LANG: 'zh-TW' }
+const ZH = { TEA_EGG_LANG: 'zh-TW', TEA_EGG_TEST_ANY_LOAD: '1' }
 const PROPS = {
   hasSurvey: false,
   isWorking: false,

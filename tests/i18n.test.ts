@@ -160,7 +160,7 @@ const BAND_PROPS = {
 test('TEA_EGG_LANG=en switches the command, band and replies to English', async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 6) })
-  mock.env(on, { TEA_EGG_LANG: 'en' })
+  mock.env(on, { TEA_EGG_LANG: 'en', TEA_EGG_TEST_ANY_LOAD: '1' })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   const described: string[] = []
   on('command.register', (_, e) => {

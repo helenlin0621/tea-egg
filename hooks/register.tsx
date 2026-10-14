@@ -75,10 +75,49 @@ async function loadBand($: EngineInterface): Promise<void> {
 
 // Flip the band's hidden flag; returns whether it is hidden now
 async function toggleBand($: EngineInterface): Promise<boolean> {
+  if (await checkBlocked($)) return (await $.state.get(BAND_REF)).value === true
   const hidden = (await $.state.get(BAND_REF)).value !== true
   await $.store.set(BAND_STORE_KEY, hidden)
   await $.state.set(BAND_REF, hidden)
   return hidden
+}
+
+// Claude names the store file after how the Mod was loaded, so only the installed identity (tea-egg@tea-egg) may
+// keep a save; any other load (--plugin-dir → tea-egg@inline) would start a second, diverging save.
+// File of the installed identity: tea-egg_ + first 12 hex of sha256("tea-egg@tea-egg")
+const CANONICAL_STORE_FILE = 'tea-egg_tea-egg-7a383064f644.json'
+// Installed copies run from <config>/plugins/cache/<marketplace>/<plugin>/<version>
+const INSTALLED_ROOT = /[\\/]plugins[\\/]cache[\\/]tea-egg[\\/]tea-egg[\\/][^\\/]+[\\/]?$/
+// null until checked; checked once per load
+let blocked: boolean | null = null
+
+async function isInstalledLoad($: EngineInterface): Promise<boolean> {
+  // Tests run the Mod from the repo folder with an in-memory store, never a real second save
+  if ((await $.env.get('TEA_EGG_TEST_ANY_LOAD')) === '1') return true
+  if (INSTALLED_ROOT.test($.plugin.root)) return true
+  // Not run from the install cache: allowed only if our store is the installed identity's file
+  try {
+    const configDir =
+      (await $.env.get('CLAUDE_CONFIG_DIR')) ??
+      `${(await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''}/.claude`
+    const file = JSON.parse(
+      (await $.fs.read(`${configDir}/plugins/store/${CANONICAL_STORE_FILE}`)) as string,
+    ) as Record<string, unknown>
+    const theirs = file[STORE_KEY]
+    if (theirs === undefined) return false
+    return JSON.stringify(await $.store.get(STORE_KEY)) === JSON.stringify(theirs)
+  } catch {
+    return false
+  }
+}
+
+// Returns true when this load must stay off; toasts the reason once
+async function checkBlocked($: EngineInterface): Promise<boolean> {
+  if (blocked === null) {
+    blocked = !(await isInstalledLoad($))
+    if (blocked) $.ui.toast(T().wrongLoad)
+  }
+  return blocked
 }
 
 // Activate only once per load; keep the timer handle and cancel it before registering again
@@ -121,7 +160,12 @@ function watchForSurface($: EngineInterface): void {
 async function activate($: EngineInterface): Promise<void> {
   // Claim the slot synchronously so start and attach arriving together don't activate twice
   if (interactive) return
+  if (blocked === true) return
   interactive = true
+  if (await checkBlocked($)) {
+    interactive = false
+    return
+  }
   try {
     // Also decided here in case this load never saw session.start
     setLang(detectLang(await $.env.get('TEA_EGG_LANG')))
@@ -352,6 +396,7 @@ export const register: Register = on => {
     try {
       // Someone typed /egg by hand, so someone is watching (on desktop the attach signal may come before the Mod loads and be missed)
       if (!interactive && e.origin.kind !== 'plugin') await activate($)
+      if (blocked === true) return { text: T().wrongLoad }
       if (!interactive) return { text: T().help }
       const args = e.args.trim()
       if (args === '') return { text: (await togglePane($)) ? T().paneOpened : T().paneClosed }
