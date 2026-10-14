@@ -79,24 +79,3 @@ export function parseSave(raw: unknown, now: number): Save {
   const dex = salvageDex(raw)
   return { ...newSave(now), dex, welcomed: Object.keys(dex).length > 0 }
 }
-
-// Claude keeps one store file per load identity (tea-egg@<marketplace> when installed, tea-egg@inline under
-// --plugin-dir), so the same person can end up with two saves. Given our own save and the saves found under
-// other identities, return the save to adopt, or null when ours is already the furthest along.
-// Furthest along = higher egg number (eggs only ever go up), then the later tick; each dex id keeps its highest count.
-export function reconcileSaves(own: unknown, others: readonly unknown[]): Save | null {
-  const valid = [own, ...others].filter(isSave)
-  if (valid.length === 0) return null
-  const rank = (s: Save) => [s.egg.no, s.clocks.lastTickAt] as const
-  const best = valid.reduce((a, b) => {
-    const [an, at] = rank(a)
-    const [bn, bt] = rank(b)
-    return bn > an || (bn === an && bt > at) ? b : a
-  })
-  const dex: Record<string, number> = {}
-  for (const s of [own, ...others]) {
-    for (const [id, n] of Object.entries(salvageDex(s))) dex[id] = Math.max(dex[id] ?? 0, n)
-  }
-  const merged: Save = { ...best, dex }
-  return JSON.stringify(merged) === JSON.stringify(own) ? null : merged
-}

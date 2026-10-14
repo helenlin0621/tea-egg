@@ -2,7 +2,7 @@ import { update, type EngineInterface, type Register, type Timer } from 'claude-
 import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTime } from './clock'
 import { observe, OBSERVED_TOOLS } from './detect'
 import { dexTitle, onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
-import { BAND_STORE_KEY, FAKE_STORE_KEY, reconcileSaves, STORE_KEY } from './model'
+import { BAND_STORE_KEY, FAKE_STORE_KEY, STORE_KEY } from './model'
 import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, previewArt, SVG_PX, type Art } from './panel'
 import { dexCaption, dexHeader } from './rules'
 import { decodeSpoilers } from './spoilers'
@@ -81,32 +81,6 @@ async function toggleBand($: EngineInterface): Promise<boolean> {
   return hidden
 }
 
-// Claude names the store file after how the Mod was loaded (installed vs --plugin-dir), so a change in how
-// the desktop app loads it switches to a different save. Read the other tea-egg store files and adopt the
-// one furthest along before anything is written; any failure leaves the save as it is.
-async function syncSaves($: EngineInterface): Promise<void> {
-  try {
-    const configDir =
-      (await $.env.get('CLAUDE_CONFIG_DIR')) ??
-      `${(await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''}/.claude`
-    const dir = `${configDir}/plugins/store`
-    const others: unknown[] = []
-    for (const entry of await $.fs.list(dir)) {
-      if (entry.kind !== 'file' || !/^tea-egg_.+\.json$/.test(entry.name)) continue
-      try {
-        const file = JSON.parse((await $.fs.read(`${dir}/${entry.name}`)) as string) as Record<string, unknown>
-        others.push(file[STORE_KEY])
-      } catch {
-        // A file mid-write or unreadable is skipped
-      }
-    }
-    const adopted = reconcileSaves(await $.store.get(STORE_KEY), others)
-    if (adopted) await $.store.set(STORE_KEY, adopted)
-  } catch {
-    // No access to the store folder: keep this identity's own save
-  }
-}
-
 // Activate only once per load; keep the timer handle and cancel it before registering again
 let tick: Timer | null = null
 
@@ -157,7 +131,6 @@ async function activate($: EngineInterface): Promise<void> {
       fake: parseFakeDate(await $.env.get('TEA_EGG_FAKE_DATE')),
       loadedAt: now,
     }
-    if (!clock.fake) await syncSaves($)
     const counted = (await $.state.get(COUNTED_REF)).value === true
     await mutate(ioOf($), (s, at) => onSessionOpen(s, at, localNow(at), !counted))
     if (!counted) await $.state.set(COUNTED_REF, true)
