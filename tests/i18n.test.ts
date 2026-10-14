@@ -99,7 +99,7 @@ test('English: panel stat labels', async () => {
 
 test('English: dex title', async () => {
   await inEnglish(() => {
-    expect(onCommand(newSave(1), 1, at('2026-10-07'), 'dex', never).reply!.startsWith(' Eggdex 0/9')).toBe(true)
+    expect(onCommand(newSave(1), 1, at('2026-10-07'), 'dex', never).reply!.startsWith(` Eggdex 0/${decodeSpoilers().dexSlots.length}`)).toBe(true)
   })
 })
 

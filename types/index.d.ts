@@ -9,6 +9,10 @@ export type EggRecord = {
   testRuns: number
   testFails: number
   cracked: string | null // keyword of the dangerous command that triggered it
+  multiDays?: DateKey[] // days with enough time of 2+ sessions in use at once; missing in older saves
+  multiMinutes?: Record<DateKey, number> // minutes of 2+ sessions in use at once, per day
+  dryMinutes?: number // minutes in use while the broth was dry
+  cautions?: number // risky (not outright dangerous) commands run during this egg
 }
 
 export type Egg = {
@@ -25,6 +29,9 @@ export type Egg = {
 export type Clocks = {
   lastTickAt: number
   brothMs: number
+  usedSpans?: [number, number][] // stretches of use already charged for broth, merged and recent; missing in older saves
+  spans?: { s: string; a: number; b: number }[] // recent stretches of use per session (s: session tag), to find overlaps
+  multiSpans?: [number, number][] // overlaps already counted as several-session time, merged and recent
   moodMs: number
   bucketStart: number
   bucketActive: boolean

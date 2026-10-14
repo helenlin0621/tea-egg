@@ -16,10 +16,10 @@ test('Welcome only on the first open', async () => {
   expect(onSessionOpen(a.save, 2, at('2026-10-07'), true).effects.length).toBe(0)
 })
 
-test('Reloading the same session does not count the session twice', async () => {
+test('Opening a session adds the active day once; the session itself counts on its first prompt', async () => {
   const a = onSessionOpen(newSave(1), 1, at('2026-10-07'), true).save
   const b = onSessionOpen(a, 2, at('2026-10-07'), false).save
-  expect(b.egg.record.sessionCount).toBe(1)
+  expect(b.egg.record.sessionCount).toBe(0)
   expect(b.egg.record.activeDays).toEqual(['2026-10-07'])
 })
 
@@ -41,7 +41,7 @@ test('A turn that brings flavor to 100 harvests the egg', async () => {
 })
 
 test('A dangerous command cracks the egg', async () => {
-  const r = onObserved(newSave(1), 1, at('2026-10-07'), { failed: false, test: null, danger: 'rm -rf' }, never)
+  const r = onObserved(newSave(1), 1, at('2026-10-07'), { failed: false, test: null, danger: 'rm -rf', caution: null }, never)
   expect(r.save.dex[decodeSpoilers().rules[0]!.egg]).toBe(1)
 })
 
@@ -52,7 +52,7 @@ test('Special-date mode: the real egg stats stay exactly the same', async () => 
   let x = onSessionOpen(s, 10, special(), true).save
   x = onTick(x, 10 + 60_000, special(), never).save
   x = onTurn(x, 10 + 120_000, special(), never).save
-  x = onObserved(x, 10 + 180_000, special(), { failed: true, test: 'fail', danger: 'rm -rf' }, never).save
+  x = onObserved(x, 10 + 180_000, special(), { failed: true, test: 'fail', danger: 'rm -rf', caution: null }, never).save
   expect(x.egg).toEqual(s.egg)
 })
 
@@ -77,6 +77,6 @@ test('Regular commands', async () => {
   expect(onCommand(s, 1, at('2026-10-07'), 'name', never).reply).toBe('用法：/egg name <名字>（最多 12 個字）')
   expect(onCommand(s, 1, at('2026-10-07'), 'name 一二三四五六七八九十壹貳參', never).save.egg.name).toBe('小蛋')
   expect(onCommand(s, 1, at('2026-10-07'), 'help', never).reply!.includes('/egg refill')).toBe(true)
-  expect(onCommand(s, 1, at('2026-10-07'), 'dex', never).reply!.startsWith(' 蛋圖鑑 0/9')).toBe(true)
+  expect(onCommand(s, 1, at('2026-10-07'), 'dex', never).reply!.startsWith(` 蛋圖鑑 0/${decodeSpoilers().dexSlots.length}`)).toBe(true)
   expect(onCommand(s, 1, at('2026-10-07'), 'xyz', never).reply).toBe('不認得這個指令，輸入 /egg help 看看')
 })

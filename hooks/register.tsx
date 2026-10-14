@@ -8,6 +8,9 @@ import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, 
 import { dexCaption, dexHeader } from './rules'
 import { decodeSpoilers } from './spoilers'
 import { mutate, type StoreIo } from './store'
+import { parseUse, usePrompt, useStale, useTurn, type SessionUse, type UseStep } from './usage'
+import type { Step } from './engine'
+import type { Save } from '../types'
 import { detectLang, setLang } from './i18n'
 import { T, fill } from './text'
 import { RASTER_ROWS, SIZE } from './pixels'
@@ -55,6 +58,48 @@ const ioOf = ($: EngineInterface): StoreIo => ({
     $.ui.toast(text)
   },
 })
+
+// Each session's usage record (usage.ts) sits under its own key, so sessions never overwrite each other's
+const usePrefix = () => `${storeKey()}/session/`
+
+async function sessionIdOf($: EngineInterface): Promise<string | null> {
+  try {
+    return await $.session.id()
+  } catch {
+    return null
+  }
+}
+
+// Update this session's usage record and the save together; without a session id, run the rest alone
+async function withUse(
+  $: EngineInterface,
+  track: (s: Save, use: SessionUse, at: number, t: LocalTime, tag: string) => UseStep,
+  rest: (s: Save, at: number) => Step = s => ({ save: s, effects: [] }),
+): Promise<void> {
+  const id = await sessionIdOf($)
+  if (id === null) {
+    await mutate(ioOf($), rest)
+    return
+  }
+  const key = usePrefix() + id
+  const tag = id.slice(0, 8) // enough to tell sessions apart in the save
+  let use = parseUse(await $.store.get(key))
+  await mutate(ioOf($), (s, at) => {
+    const r = track(s, use, at, localNow(at), tag)
+    use = r.use
+    const step = rest(r.save, at)
+    return { ...step, effects: [...r.effects, ...step.effects] }
+  })
+  await $.store.set(key, use)
+}
+
+// Drop usage records of sessions unused for a long time so the store doesn't grow forever
+async function pruneUse($: EngineInterface, now: number): Promise<void> {
+  for (const key of await $.store.keys()) {
+    if (!key.startsWith(usePrefix())) continue
+    if (useStale(parseUse(await $.store.get(key)), now)) await $.store.delete(key)
+  }
+}
 
 // Toggle the side pane: shared by /egg and the band button; returns the state after toggling
 async function togglePane($: EngineInterface): Promise<boolean> {
@@ -196,6 +241,7 @@ async function activate($: EngineInterface): Promise<void> {
     const counted = (await $.state.get(COUNTED_REF)).value === true
     await mutate(ioOf($), (s, at) => onSessionOpen(s, at, localNow(at), !counted))
     if (!counted) await $.state.set(COUNTED_REF, true)
+    await pruneUse($, now).catch(() => undefined)
     tick?.cancel()
     tick = $.clock.every(TICK_MS, () => {
       void mutate(ioOf($), (s, at) => onTick(s, at, localNow(at), rng)).catch(() => undefined)
@@ -243,6 +289,7 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     try {
       if (!interactive && (await hasSurface($))) await activate($)
+      if (interactive) await withUse($, usePrompt)
     } catch {
       // Ignore silently
     }
@@ -253,7 +300,7 @@ export const register: Register = on => {
     const ran = await next(e)
     try {
       if (interactive && e.agentId === undefined && e.reason !== 'error') {
-        await mutate(ioOf($), (s, at) => onTurn(s, at, localNow(at), rng))
+        await withUse($, useTurn, (s, at) => onTurn(s, at, localNow(at), rng))
       }
     } catch {
       // Ignore silently

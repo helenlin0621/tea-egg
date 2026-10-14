@@ -53,8 +53,8 @@ test('Bases leave the steam area clear (steam is its own layer)', async () => {
   }
 })
 
-test('Dex art is null when the sprite is missing', async () => {
-  expect(dexArt('nope-id', true, 'terminal')).toBeNull()
+test('An owned egg with no picture yet keeps the locked picture', async () => {
+  expect(dexArt('nope-id', true, 'terminal')).toEqual(dexArt('nope-id', false, 'terminal'))
 })
 
 test('Panel text includes the name, stat bars and hint', async () => {

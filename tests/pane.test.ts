@@ -32,7 +32,7 @@ test('The pane renders on terminal and desktop and its buttons work', async ($, 
     await ui.press({ key: 'refill' })
     expect(toasts.some(t => t.includes('滷汁加滿了'))).toBe(true)
     await ui.press({ key: 'dex' })
-    expect(await ui.find({ type: 'Text', text: /蛋圖鑑 0\/9/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /蛋圖鑑 0\/10/})).toBeDefined()
     await ui.press({ key: 'dex' })
     await ui.unmount()
   }

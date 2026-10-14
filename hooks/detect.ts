@@ -11,7 +11,9 @@ export const OBSERVED_TOOLS = ['Bash', 'PowerShell'] as const
 // - python -m pytest, python3 -m pytest, py -m pytest
 // - go / cargo / mvn / gradle / dotnet test
 // - gradlew test (including ./gradlew, .\gradlew, gradlew.bat)
+// - claude plugin test (including a full or quoted path to claude / claude.exe, or one held in a variable)
 export const TEST_COMMANDS: readonly RegExp[] = [
+  /^(?:\S*claude(?:\.exe)?|""|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)\s+plugin\s+test\b/i,
   /^(?:npm|pnpm|yarn)\s+(?:run\s+)?test\b/,
   /^npx\s+(?:jest|vitest)\b/,
   /^(?:vitest|jest|pytest|rspec|phpunit)(?=\s|$)/,
@@ -114,7 +116,42 @@ function quotedSegments(cmd: string): string[][] {
   return segs
 }
 
-// rm -rf only counts when some target lies outside a temp location. Temp locations:
+// rm -rf only counts when a target wipes a whole tree from the top: the root, the home folder, the current or
+// parent folder, or everything in the current folder. Targets are matched as written (quotes removed):
+// - /  /*  and a Windows drive root (C:  C:/  C:\  C:/*), the same as /
+// - ~  ~/  ~/*  $HOME  ${HOME}  $HOME/  $HOME/*
+// - .  ./  ./*  ..  ../  *
+// Any other path (node_modules, dist, ./build, src/x, $SOME_VAR/x ...) does not count.
+
+const ROOT_TARGETS = new Set([
+  '/', '/*',
+  '~', '~/', '~/*', '$HOME', '${HOME}', '$HOME/', '${HOME}/', '$HOME/*', '${HOME}/*',
+  '.', './', './*', '..', '../', '*',
+])
+const DRIVE_ROOT = /^[A-Za-z]:[\\/]*\*?$/
+
+function isRootTarget(word: string): boolean {
+  return ROOT_TARGETS.has(word) || DRIVE_ROOT.test(word)
+}
+
+const isRedirect = (w: string) => /^\d*[<>]/.test(w)
+
+function wipesRoot(cmd: string): boolean {
+  for (const segment of quotedSegments(cmd)) {
+    let i = 0
+    while (i < segment.length && (segment[i] === 'sudo' || /^[A-Za-z_][A-Za-z0-9_]*=/.test(segment[i]!))) i++
+    const words = segment.slice(i).filter(w => !isRedirect(w))
+    if (words[0] !== 'rm') continue
+    const flags = shortFlags(words)
+    const recursive = /[rR]/.test(flags) || words.includes('--recursive')
+    const force = flags.includes('f') || words.includes('--force')
+    if (!recursive || !force) continue
+    if (words.slice(1).some(w => !w.startsWith('-') && isRootTarget(w))) return true
+  }
+  return false
+}
+
+// Caution level: rm -rf of an ordinary path counts when some target lies outside a temp location. Temp locations:
 // - a path segment named tmp / temp / scratchpad with something below it (the folder itself still counts)
 // - anything under node_modules / bin / obj / build / .superpowers (including the folder itself), unless it sits
 //   under a system folder such as /usr or C:/Program Files
@@ -167,9 +204,7 @@ function isTempPath(path: string): boolean {
   return i !== -1 && i < parts.length - 1
 }
 
-const isRedirect = (w: string) => /^\d*[<>]/.test(w)
-
-function unsafeRm(cmd: string): boolean {
+function riskyRm(cmd: string): boolean {
   const env: Env = new Map()
   let cwd: string | null = null
   for (const segment of quotedSegments(cmd)) {
@@ -203,11 +238,35 @@ function unsafeRm(cmd: string): boolean {
   return false
 }
 
-// Dangerous commands we watch for:
-// - rm -rf (recursive + forced delete), unless every target is in a temp location (see unsafeRm)
-// - git push --force / -f / --force-with-lease (force push)
+// Caution-level commands: everyday but risky. Each one is counted; enough of them during one egg also cracks it
+// (how many is part of the harvest rules)
+// - rm -rf of an ordinary path outside temp locations (see riskyRm)
 // - git reset --hard
 // - git clean -fd (not with -n / --dry-run)
+// - git push --force-with-lease
+export function cautionKeyword(cmd: string): string | null {
+  if (dangerKeyword(cmd) !== null) return null
+  for (const words of segments(cmd)) {
+    const [head, sub] = words
+    const flags = shortFlags(words)
+    if (head === 'rm') {
+      const recursive = /[rR]/.test(flags) || words.includes('--recursive')
+      const force = flags.includes('f') || words.includes('--force')
+      if (recursive && force && riskyRm(cmd)) return 'rm -rf'
+    }
+    if (head === 'git' && sub === 'reset' && words.includes('--hard')) return 'git reset --hard'
+    if (head === 'git' && sub === 'clean' && flags.includes('f') && flags.includes('d') && !flags.includes('n') && !words.includes('--dry-run')) return 'git clean -fd'
+    if (head === 'git' && sub === 'push' && words.some(w => w === '--force-with-lease' || w.startsWith('--force-with-lease='))) {
+      return 'git push --force-with-lease'
+    }
+  }
+  return null
+}
+
+// Dangerous commands we watch for:
+// - rm -rf (recursive + forced delete) of a root-like target (see wipesRoot)
+// - git push --force / -f (force push); --force-with-lease is the safe form and does not count
+// git reset --hard, git clean -fd and other everyday-but-risky commands are caution level (see cautionKeyword)
 // - chmod -R 777
 // - SQL DROP TABLE / DROP DATABASE / TRUNCATE: only when the command word of some segment is an SQL client
 //   (psql, mysql, mariadb, sqlite3, sqlcmd, duckdb, sqlplus, clickhouse-client, Invoke-Sqlcmd)
@@ -233,15 +292,13 @@ export function dangerKeyword(cmd: string): string | null {
     if (head === 'rm') {
       const recursive = /[rR]/.test(flags) || words.includes('--recursive')
       const force = flags.includes('f') || words.includes('--force')
-      if (recursive && force && unsafeRm(cmd)) return 'rm -rf'
+      if (recursive && force && wipesRoot(cmd)) return 'rm -rf'
     }
     if (head === 'git' && sub === 'push') {
-      if (words.some(w => w === '--force' || w === '--force-with-lease' || w.startsWith('--force-with-lease=')) || flags.includes('f')) {
+      if (words.includes('--force') || flags.includes('f')) {
         return 'git push --force'
       }
     }
-    if (head === 'git' && sub === 'reset' && words.includes('--hard')) return 'git reset --hard'
-    if (head === 'git' && sub === 'clean' && flags.includes('f') && flags.includes('d') && !flags.includes('n') && !words.includes('--dry-run')) return 'git clean -fd'
     if (head === 'chmod' && (flags.includes('R') || words.includes('--recursive')) && words.some(w => w === '777' || w === '0777')) {
       return 'chmod -R 777'
     }
@@ -253,7 +310,7 @@ export function dangerKeyword(cmd: string): string | null {
   return null
 }
 
-export type Observation = { failed: boolean; test: 'pass' | 'fail' | null; danger: string | null }
+export type Observation = { failed: boolean; test: 'pass' | 'fail' | null; danger: string | null; caution: string | null }
 
 export function observe(tool: string, command: string, ran: { deny?: string; isError?: boolean }): Observation | null {
   if (ran.deny !== undefined) return null
@@ -263,6 +320,7 @@ export function observe(tool: string, command: string, ran: { deny?: string; isE
   const test = isShell && isTestCommand(cmd) ? (failed ? 'fail' : 'pass') : null
   // Dangerous commands only count when they actually ran successfully (denied or failed calls don't)
   const danger = isShell && !failed ? dangerKeyword(cmd) : null
-  if (!failed && test === null && danger === null) return null
-  return { failed, test, danger }
+  const caution = isShell && !failed ? cautionKeyword(cmd) : null
+  if (!failed && test === null && danger === null && caution === null) return null
+  return { failed, test, danger, caution }
 }

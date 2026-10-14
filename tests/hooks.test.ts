@@ -11,6 +11,11 @@ function base(on: Parameters<Parameters<typeof test>[1]>[1]): void {
   on('turn.complete', () => ({ text: '' }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.toast', () => ({ value: undefined }))
+  on('session.id', () => ({ value: 'session-1' }) as never)
+}
+// A session counts toward the egg on its first prompt, so tests that check the count send one
+function answerPrompts(on: Parameters<Parameters<typeof test>[1]>[1]): void {
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
 }
 const BASH_OK = { result: { stdout: 'ok', stderr: '', interrupted: false }, isError: false }
 
@@ -40,7 +45,7 @@ test('Observing Bash: the result is returned unchanged and not blocked', OPTS, a
   base(on)
   on('tool.call', { tool: 'Bash' }, () => BASH_OK)
   await $.session.start(START)
-  const ran = await $.tool.call({ tool: 'Bash', command: 'rm -rf src' })
+  const ran = await $.tool.call({ tool: 'Bash', command: 'rm -rf .' })
   expect(ran.deny).toBe(undefined)
   expect(ran.isError).not.toBe(true)
   expect((ran.result as { stdout: string }).stdout).toBe('ok')
@@ -53,7 +58,7 @@ test('A dangerous command harvests the egg immediately', OPTS, async ($, on) => 
   base(on)
   on('tool.call', { tool: 'Bash' }, () => BASH_OK)
   await $.session.start(START)
-  await $.tool.call({ tool: 'Bash', command: 'git reset --hard' })
+  await $.tool.call({ tool: 'Bash', command: 'git push --force' })
   const value = await saved($)
   expect(value!.egg.no).toBe(2)
 })
@@ -75,8 +80,12 @@ test('Re-firing session.start does not count the session twice', OPTS, async ($,
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, ZH)
   base(on)
+  answerPrompts(on)
   await $.session.start(START)
+  expect((await saved($)).egg.record.sessionCount).toBe(0) // opened but not used yet
+  await $.prompt.submit({ text: 'hi' })
   await $.session.start(START)
+  await $.prompt.submit({ text: 'again' })
   expect((await saved($)).egg.record.sessionCount).toBe(1)
 })
 
@@ -88,7 +97,7 @@ test('Non-interactive sessions do not take part', OPTS, async ($, on) => {
   on('tool.call', { tool: 'Bash' }, () => BASH_OK)
   await $.session.start({ cwd: '.', surface: null, isInteractive: false })
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
-  const ran = await $.tool.call({ tool: 'Bash', command: 'git reset --hard' })
+  const ran = await $.tool.call({ tool: 'Bash', command: 'git push --force' })
   expect((ran.result as { stdout: string }).stdout).toBe('ok')
   const value = await saved($)
   expect(value?.egg.progress ?? 0).toBe(0)
@@ -112,7 +121,6 @@ test('Desktop: no surface at start; activates only after attach', OPTS, async ($
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
   const value = await saved($)
   expect(value.egg.progress).toBe(1)
-  expect(value.egg.record.sessionCount).toBe(1)
 })
 
 test('Attaching twice does not count the session twice', OPTS, async ($, on) => {
@@ -120,10 +128,13 @@ test('Attaching twice does not count the session twice', OPTS, async ($, on) => 
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, ZH)
   base(on)
+  answerPrompts(on)
   on('session.attach', (_, e) => ({ clientId: e.clientId }))
   await $.session.start(HEADLESS)
   await $.session.attach(ATTACH)
+  await $.prompt.submit({ text: 'hi' })
   await $.session.attach({ surface: 'desktop', clientId: 'c2' })
+  await $.prompt.submit({ text: 'again' })
   expect((await saved($)).egg.record.sessionCount).toBe(1)
 })
 
@@ -190,7 +201,7 @@ test('Desktop: no surface at start; activates automatically when one attaches a 
   expect(await saved($)).toBe(null)
   surfaces = ['desktop']
   await clock.advance(3_000)
-  expect((await saved($)).egg.record.sessionCount).toBe(1)
+  expect(await saved($)).not.toBe(null) // activated: the save is written
 })
 
 test('Sessions with no surface at all (-p, scripts) never activate', OPTS, async ($, on) => {
@@ -217,4 +228,30 @@ test('Activates on prompt submit when a surface is attached, and that turn still
   await $.prompt.submit({ text: 'hi' })
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
   expect((await saved($)).egg.progress).toBe(1)
+})
+
+test('Usage: each session keeps its own record; old records are dropped when the egg starts', OPTS, async ($, on) => {
+  const now = Date.UTC(2026, 9, 7, 2)
+  const old = `${STORE_KEY}/session/long-gone`
+  // A store the test can look into (mock.store gives no handle)
+  const store = new Map<string, unknown>([[old, { minutes: 5, segmentStart: 0, lastTurnEnd: 0, lastPromptAt: 0, countedFor: 1 }]])
+  on('store.get', (_, e) => ({ value: store.get(e.key) }) as never)
+  on('store.set', (_, e) => (store.set(e.key, JSON.parse(JSON.stringify(e.value))), { value: undefined }) as never)
+  on('store.delete', (_, e) => (store.delete(e.key), { value: undefined }) as never)
+  on('store.keys', () => ({ value: [...store.keys()] }) as never)
+  const clock = mock.clock(on, { now })
+  mock.env(on, ZH)
+  base(on)
+  answerPrompts(on)
+  await $.session.start(START)
+  expect(store.has(old)).toBe(false)
+  await $.prompt.submit({ text: 'hi' })
+  await clock.advance(12 * 60_000)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  const use = store.get(`${STORE_KEY}/session/session-1`) as { minutes: number; countedFor: number }
+  expect(use.minutes).toBe(12)
+  expect(use.countedFor).toBe(1)
+  const value = (await saved($)) as unknown as { egg: { record: { sessionCount: number; sessionMinutes: number } } }
+  expect(value.egg.record.sessionCount).toBe(1)
+  expect(value.egg.record.sessionMinutes).toBe(12)
 })

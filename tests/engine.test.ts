@@ -23,45 +23,23 @@ test('Daily flavor cap is 15 and resets the next day', async () => {
   expect(s.egg.progress).toBe(16)
 })
 
-test('Broth drops 4 every 15 minutes, counting only time the session is open', async () => {
+test('Keeping the program open without using it does not use up broth', async () => {
   const t0 = ms('2026-10-07')
   let s = newSave(t0)
-  for (let m = 1; m <= 15; m++) s = tick(s, t0 + m * MIN, at('2026-10-07')).save
-  expect(s.egg.broth).toBe(96)
-  // Closed for 5 hours, then reopened: at most 3 minutes count per tick
-  s = tick(s, t0 + 15 * MIN + 5 * 60 * MIN, at('2026-10-07', 15)).save
-  expect(s.egg.broth).toBe(96)
+  for (let m = 1; m <= 60; m++) s = tick(s, t0 + m * MIN, at('2026-10-07')).save
+  expect(s.egg.broth).toBe(100)
 })
 
-test('Two sessions ticking at the same time do not double-deduct', async () => {
+test('Flavor stops while the broth is dry; refill restores it', async () => {
   const t0 = ms('2026-10-07')
-  let s = newSave(t0)
-  for (let m = 1; m <= 15; m++) {
-    s = tick(s, t0 + m * MIN, at('2026-10-07')).save
-    s = tick(s, t0 + m * MIN, at('2026-10-07')).save
-  }
-  expect(s.egg.broth).toBe(96)
-})
-
-test('Toasts once when broth hits zero, then flavor stops; refill restores it', async () => {
-  const t0 = ms('2026-10-07')
-  let s = newSave(t0)
-  s.egg.broth = 4
-  let x = s
-  const toasts: string[] = []
-  for (let m = 1; m <= 15; m++) {
-    const st = tick(x, t0 + m * MIN, at('2026-10-07'))
-    x = st.save
-    toasts.push(...st.effects.map(f => f.text))
-  }
-  expect(x.egg.broth).toBe(0)
-  expect(toasts.filter(text => text.includes('滷汁乾了')).length).toBe(1)
-  const stuck = turnDone(x, t0 + 16 * MIN, at('2026-10-07'), never).save
+  const s = newSave(t0)
+  s.egg.broth = 0
+  const stuck = turnDone(s, t0, at('2026-10-07'), never).save
   expect(stuck.egg.progress).toBe(0)
   const refilled = refill(stuck).save
   expect(refilled.egg.broth).toBe(100)
   expect(refilled.egg.mood >= 70).toBe(true)
-  expect(turnDone(refilled, t0 + 17 * MIN, at('2026-10-07'), never).save.egg.progress).toBe(1)
+  expect(turnDone(refilled, t0 + MIN, at('2026-10-07'), never).save.egg.progress).toBe(1)
 })
 
 test('A 10-minute bucket adds +1 only if there was activity', async () => {
@@ -208,4 +186,19 @@ test('Flipping with zero broth gives mood but no flavor and replies with flipNoG
   expect(r.save.egg.progress).toBe(0)
   expect(r.save.egg.mood).toBe(55)
   expect(r.reply).toBe('翻好了！(•̀ᴗ•́)↻')
+})
+
+test('Special-date-mode days are neither active nor empty days in the gap', async () => {
+  const dm = decodeSpoilers().dateMode
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const around = (offset: number) => new Date(Date.UTC(2027, dm.month - 1, dm.day + offset)).toISOString().slice(0, 10)
+  const gap = (a: string, b: string) => {
+    let s = newSave(ms(a))
+    s = turnDone(s, ms(a), at(a), never).save
+    s = turnDone(s, ms(b), at(b), never).save
+    return s.egg.record.maxGapDays
+  }
+  expect(around(0)).toBe(`2027-${pad(dm.month)}-${pad(dm.day)}`)
+  expect(gap(around(-1), around(1))).toBe(0) // the day before and the day after: no gap
+  expect(gap(around(-2), around(2))).toBe(2) // three days in between, one of them paused
 })

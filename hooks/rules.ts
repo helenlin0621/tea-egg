@@ -14,6 +14,9 @@ export type Stats = {
   testRuns: number
   failRate: number
   ageDays: number
+  multiDays: number
+  activeDays: number
+  dryMinutes: number
   sessionCount: number
   avgSessionMinutes: number
 }
@@ -26,6 +29,9 @@ export function statsOf(egg: Egg, now: number): Stats {
     testRuns: r.testRuns,
     failRate: r.testRuns > 0 ? r.testFails / r.testRuns : 0,
     ageDays: (now - r.startedAt) / DAY,
+    multiDays: (r.multiDays ?? []).length,
+    activeDays: r.activeDays.length,
+    dryMinutes: r.dryMinutes ?? 0,
     sessionCount: r.sessionCount,
     avgSessionMinutes: r.sessionCount > 0 ? r.sessionMinutes / r.sessionCount : 0,
   }
@@ -39,6 +45,8 @@ export function matches(rule: Rule, st: Stats, roll: number): boolean {
     case 'gapAtLeast': return st.maxGapDays >= rule.days
     case 'failRateAbove': return st.testRuns >= rule.minRuns && st.failRate > rule.rate
     case 'ageAtLeast': return st.ageDays >= rule.days
+    case 'dryAtLeast': return st.dryMinutes >= rule.minutes
+    case 'multiDaysAtLeast': return st.multiDays >= rule.days && st.multiDays >= rule.ratio * st.activeDays
     case 'avgSessionAbove': return st.sessionCount > 0 && st.avgSessionMinutes > rule.minutes
     case 'avgSessionBelow': return st.sessionCount > 0 && st.avgSessionMinutes < rule.minutes
     case 'always': return true
@@ -70,9 +78,8 @@ function harvest(s: Save, now: number, rng: () => number): Effect {
   const text = keyword !== null
     ? fill(crackToast, { kw: keyword, name: info.name, icon: info.icon })
     : fill(T().harvest, { name: info.name })
-  const next = newEgg(s.egg.no + 1, now)
-  next.record.sessionCount = 1 // the current session counts toward the new egg too
-  s.egg = next
+  // A session that goes on after the harvest counts toward the new egg on its next prompt (usage.ts)
+  s.egg = newEgg(s.egg.no + 1, now)
   s.daily.gained = 0 // the daily cap is per egg: a new egg gets a fresh cap even if the last one used today's up
   s.harvestedAt = now
   return { kind: 'toast', text: isNew ? text + T().newDex : text }
@@ -90,6 +97,17 @@ export function crack(prev: Save, keyword: string, now: number, rng: () => numbe
   const save = structuredClone(prev)
   save.egg.record.cracked = keyword
   return settle({ save, effects: [] }, now, rng)
+}
+
+// A caution-level command: counted for this egg; enough of them crack it like a dangerous command would
+export function caution(prev: Save, keyword: string, now: number, rng: () => number): Step {
+  const save = structuredClone(prev)
+  const r = save.egg.record
+  r.cautions = (r.cautions ?? 0) + 1
+  const rule = decodeSpoilers().rules.find(x => x.when === 'cracked')
+  const limit = rule?.when === 'cracked' ? rule.cautions : Infinity
+  if (r.cautions >= limit) return crack(save, keyword, now, rng)
+  return { save, effects: [] }
 }
 
 // The special-date-mode prize egg hides even its icon until collected. Decided by "is it the prize", not by slot position,

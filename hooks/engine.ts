@@ -1,5 +1,6 @@
 import type { Save } from '../types'
 import { daysBetween, type LocalTime } from './clock'
+import { isSpecialDay } from './datemode'
 import { T, pick } from './text'
 
 export type Effect = { kind: 'toast'; text: string }
@@ -39,12 +40,70 @@ export function gain(s: Save, n: number, t: LocalTime, capped: boolean): number 
   return s.egg.progress - before
 }
 
+// Spans of use are kept for a day: long enough for any session's turn to overlap them
+export const SPAN_KEEP_MS = 24 * 60 * MIN
+
+// The part of [from, to] not yet covered by the (merged) spans, and the spans with [from, to] merged in
+export function uncovered(spans: [number, number][], from: number, to: number): { ms: number; spans: [number, number][] } {
+  let covered = 0
+  for (const [a, b] of spans) covered += Math.max(0, Math.min(b, to) - Math.max(a, from))
+  const merged: [number, number][] = []
+  for (const [a, b] of [...spans, [from, to] as [number, number]].sort((x, y) => x[0] - y[0])) {
+    const last = merged[merged.length - 1]
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b)
+    else merged.push([a, b])
+  }
+  return { ms: Math.max(0, to - from - covered), spans: merged.filter(([, b]) => b >= to - SPAN_KEEP_MS) }
+}
+
+// Broth goes down only for time in use ([from, to], one segment of a session). Several sessions in use at once
+// share the save's charged spans, so the same stretch of time is charged once
+export function useBroth(s: Save, from: number, to: number, effects: Effect[]): void {
+  if (to <= from) return
+  const r = uncovered(s.clocks.usedSpans ?? [], from, to)
+  s.clocks.usedSpans = r.spans
+  let ms = r.ms
+  while (ms > 0) {
+    if (s.egg.broth <= 0) {
+      // A dry pot: the rest of this stretch is time in use with no broth (whatever the day's flavor)
+      s.egg.record.dryMinutes = (s.egg.record.dryMinutes ?? 0) + ms / MIN
+      return
+    }
+    const part = Math.min(ms, RULES.brothStepMs - s.clocks.brothMs)
+    s.clocks.brothMs += part
+    ms -= part
+    if (s.clocks.brothMs >= RULES.brothStepMs) {
+      s.clocks.brothMs = 0
+      s.egg.broth = clamp(s.egg.broth - RULES.brothStep)
+      if (s.egg.broth === 0) effects.push(toast(T().brothEmpty))
+    }
+  }
+}
+
+// Special-date-mode days pause the egg: they are neither active days nor days not opened
+function pausedDaysBetween(a: string, b: string): number {
+  const start = Date.parse(`${a}T00:00:00Z`)
+  const span = Math.min(daysBetween(a, b), 400)
+  let n = 0
+  for (let i = 1; i < span; i++) {
+    const d = new Date(start + i * 24 * 60 * MIN)
+    const month = d.getUTCMonth() + 1
+    const day = d.getUTCDate()
+    const date = d.toISOString().slice(0, 10)
+    if (isSpecialDay({ date, year: d.getUTCFullYear(), month, day, hour: 12, minute: 0 })) n++
+  }
+  return n
+}
+
 export function addActiveDay(s: Save, t: LocalTime): void {
   const days = s.egg.record.activeDays
   if (days.includes(t.date)) return
   const last = days[days.length - 1]
-  // Gap = days not opened between two active days (consecutive days = 0)
-  if (last !== undefined) s.egg.record.maxGapDays = Math.max(s.egg.record.maxGapDays, daysBetween(last, t.date) - 1)
+  // Gap = days not opened between two active days (consecutive days = 0); special-date days in between don't count
+  if (last !== undefined) {
+    const gap = daysBetween(last, t.date) - 1 - pausedDaysBetween(last, t.date)
+    s.egg.record.maxGapDays = Math.max(s.egg.record.maxGapDays, gap)
+  }
   days.push(t.date)
 }
 
@@ -55,15 +114,7 @@ export function tick(prev: Save, now: number, t: LocalTime): Step {
   s.clocks.lastTickAt = Math.max(s.clocks.lastTickAt, now)
   if (elapsed === 0) return step
 
-  s.egg.record.sessionMinutes += elapsed / MIN
-
-  s.clocks.brothMs += elapsed
-  while (s.clocks.brothMs >= RULES.brothStepMs) {
-    s.clocks.brothMs -= RULES.brothStepMs
-    const before = s.egg.broth
-    s.egg.broth = clamp(before - RULES.brothStep)
-    if (before > 0 && s.egg.broth === 0) step.effects.push(toast(T().brothEmpty))
-  }
+  // Session length and broth both follow actual use (usage.ts, useBroth), not the time the program stays open
 
   s.clocks.moodMs += elapsed
   while (s.clocks.moodMs >= RULES.moodStepMs) {

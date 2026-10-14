@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { dangerKeyword, isTestCommand, observe } from '../hooks/detect'
+import { cautionKeyword, dangerKeyword, isTestCommand, observe } from '../hooks/detect'
 
 test('Recognizes test commands', async () => {
   for (const cmd of [
@@ -13,17 +13,13 @@ test('Recognizes test commands', async () => {
 })
 
 test('Recognizes dangerous commands', async () => {
-  expect(dangerKeyword('rm -rf src')).toBe('rm -rf')
-  expect(dangerKeyword('rm -fr src')).toBe('rm -rf')
-  expect(dangerKeyword('rm -r -f src')).toBe('rm -rf')
-  expect(dangerKeyword('sudo rm -Rf ~/x')).toBe('rm -rf')
-  expect(dangerKeyword('cd x && rm -rf y')).toBe('rm -rf')
+  expect(dangerKeyword('rm -rf /')).toBe('rm -rf')
+  expect(dangerKeyword('rm -fr ~')).toBe('rm -rf')
+  expect(dangerKeyword('rm -r -f .')).toBe('rm -rf')
+  expect(dangerKeyword('sudo rm -Rf /*')).toBe('rm -rf')
+  expect(dangerKeyword('cd x && rm -rf *')).toBe('rm -rf')
   expect(dangerKeyword('git push --force')).toBe('git push --force')
   expect(dangerKeyword('git push -f origin main')).toBe('git push --force')
-  expect(dangerKeyword('git push --force-with-lease')).toBe('git push --force')
-  expect(dangerKeyword('git reset --hard HEAD~1')).toBe('git reset --hard')
-  expect(dangerKeyword('git clean -fd')).toBe('git clean -fd')
-  expect(dangerKeyword('git clean -f -d')).toBe('git clean -fd')
   expect(dangerKeyword('psql -c "DROP TABLE users"')).toBe('DROP TABLE')
   expect(dangerKeyword("mysql -e 'drop database app'")).toBe('DROP DATABASE')
   expect(dangerKeyword('sqlite3 a.db "TRUNCATE TABLE logs"')).toBe('TRUNCATE')
@@ -40,58 +36,62 @@ test('Merely mentioning a dangerous command does not count', async () => {
   expect(dangerKeyword('chmod 755 run.sh')).toBe(null)
 })
 
-test('rm -rf inside temp locations does not count', async () => {
+test('rm -rf only counts for root-like targets', async () => {
   for (const cmd of [
-    'rm -rf /tmp/x',
-    'sudo rm -Rf /tmp/x /var/tmp/y',
-    'rm -rf "C:/Users/me/AppData/Local/Temp/claude/abc/scratchpad/wrtest"',
-    'rm -rf C:\\\\Users\\\\me\\\\AppData\\\\Local\\\\Temp\\\\build',
-    'rm -rf "$TEMP/out" $TMPDIR/x ${TMP}/y',
-    'rm -rf "$LOCALAPPDATA/Temp/x"',
-    'rm -rf node_modules',
-    'rm -rf web/node_modules packages/a/node_modules',
-    'rm -rf bin obj',
-    'rm -rf src/App/bin/Release src/App/obj',
-    'rm -rf build web/build',
-    'rm -rf "C:/Users/me/Desktop/TimeZoneCalc/bin"',
-    'rm -rf .superpowers/sdd/2026-10-07-tea-egg',
-    'cd /c/Users/me/proj && rm -rf .superpowers',
-    'S=/c/Users/me/AppData/Local/Temp/claude/abc/scratchpad/te; rm -rf $S; mkdir -p $S',
-    'SCR="C:/x/scratchpad"\nrm -rf "$SCR/restoretest" "$SCR/stage"',
-    'tmp=$(mktemp -d); cd $tmp && rm -rf $tmp',
-    'export T=/tmp/work && rm -rf "$T"/*',
-    'cd /c/Users/me/AppData/Local/Temp/claude/abc/scratchpad && rm -rf rfs.git',
-    'cd "$TEMP/claude/abc/scratchpad" 2>/dev/null; rm -rf dfcc-inspect 2>/dev/null',
+    'rm -rf /', 'rm -rf /*', 'rm -rf ~', 'rm -rf ~/', 'rm -rf ~/*', 'rm -rf $HOME', 'rm -rf "$HOME"', 'rm -rf ${HOME}/',
+    'rm -rf .', 'rm -rf ./', 'rm -rf ./*', 'rm -rf ..', 'rm -rf ../', 'rm -rf *', 'rm --recursive --force .',
+    'rm -rf C:/', "rm -rf 'C:\\'", 'rm -rf C:\\*', 'rm -rf c:/*', 'rm -rf D:',
+    'rm -rf dist /', 'rm -rf src; rm -rf .',
+  ]) expect(dangerKeyword(cmd)).toBe('rm -rf')
+})
+
+test('rm -rf of an ordinary path does not count', async () => {
+  for (const cmd of [
+    'rm -rf node_modules', 'rm -rf dist', 'rm -rf ./build', 'rm -rf src', 'rm -rf ~/scratch', 'rm -rf "$HOME/project"',
+    'rm -rf $UNKNOWN/x', 'rm -rf /tmp/x', 'rm -rf /usr/bin', 'rm -rf "C:/Program Files/App"', 'rm -rf ./*.log',
+    'rm -rf .git', 'rm -rf ../other', 'rm -r /', 'rm -f *',
   ]) expect(dangerKeyword(cmd)).toBe(null)
 })
 
-test('rm -rf still counts when any target is outside temp locations', async () => {
+test('Everyday risky commands are caution level, not dangerous', async () => {
+  const cases: [string, string | null][] = [
+    ['git reset --hard', 'git reset --hard'],
+    ['git clean -fd', 'git clean -fd'],
+    ['git clean -nfd', null],
+    ['git push --force-with-lease origin main', 'git push --force-with-lease'],
+    ['rm -rf dist', 'rm -rf'],
+    ['rm -rf src/old', 'rm -rf'],
+    ['rm -rf node_modules', null], // build output and temp folders don't count at all
+    ['rm -rf /tmp/x', null],
+    ['rm -rf ./build', null],
+    ['rm -rf /', null], // dangerous, not caution
+    ['git push --force', null],
+    ['git commit -m "git reset --hard"', null],
+  ]
+  for (const [cmd, keyword] of cases) expect(cautionKeyword(cmd)).toBe(keyword)
+  expect(observe('Bash', 'git reset --hard', {})).toEqual({ failed: false, test: null, danger: null, caution: 'git reset --hard' })
+  expect(observe('Bash', 'git reset --hard', { isError: true })).toEqual({ failed: true, test: null, danger: null, caution: null })
+})
+
+test('claude plugin test counts as a test command', async () => {
+  for (const cmd of ['claude plugin test .', 'claude.exe plugin test .', 'C:/x/claude.exe plugin test .', 'C="/x/claude.exe"; "$C" plugin test .', '$CLAUDE plugin test .']) {
+    expect(isTestCommand(cmd)).toBe(true)
+  }
+  for (const cmd of ['claude plugin validate .', 'echo "claude plugin test"']) expect(isTestCommand(cmd)).toBe(false)
+})
+
+test('Everyday git commands and lease-guarded pushes do not count', async () => {
   for (const cmd of [
-    'rm -rf /tmp',
-    'rm -rf /tmp/x src',
-    'rm -rf /tmp/../home/me',
-    'rm -rf $UNKNOWN/x',
-    'rm -rf "$HOME/project"',
-    'rm -rf ~/scratch',
-    'D="/c/Users/me/Desktop/work"; rm -rf "$D/probe-out"',
-    'rm -rf /bin',
-    'rm -rf /usr/bin',
-    'rm -rf /usr/local/lib/node_modules',
-    'rm -rf "C:/Program Files/App/bin"',
-    'rm -rf C:/Windows/System32/obj',
-    'rm -rf builds binaries',
-    'cd /tmp/x && cd ~/project && rm -rf src',
-    'S=/tmp/x; S=/home/me; rm -rf $S',
-    'cd $(git rev-parse --show-toplevel) && rm -rf dist',
-    'rm -rf /tmp/x; rm -rf src',
-  ]) expect(dangerKeyword(cmd)).toBe('rm -rf')
+    'git reset --hard', 'git reset --hard HEAD~1', 'git clean -fd', 'git clean -f -d',
+    'git push --force-with-lease', 'git push --force-with-lease=main:abc origin main',
+  ]) expect(dangerKeyword(cmd)).toBe(null)
 })
 
 test('Observation: denied calls do not count; PowerShell is observed too', async () => {
   expect(observe('Bash', 'rm -rf x', { deny: 'user denied' })).toBe(null)
-  expect(observe('Bash', 'npm test', { isError: true })).toEqual({ failed: true, test: 'fail', danger: null })
-  expect(observe('PowerShell', 'npm test', { isError: false })).toEqual({ failed: false, test: 'pass', danger: null })
-  expect(observe('Read', '', { isError: true })).toEqual({ failed: true, test: null, danger: null })
+  expect(observe('Bash', 'npm test', { isError: true })).toEqual({ failed: true, test: 'fail', danger: null, caution: null })
+  expect(observe('PowerShell', 'npm test', { isError: false })).toEqual({ failed: false, test: 'pass', danger: null, caution: null })
+  expect(observe('Read', '', { isError: true })).toEqual({ failed: true, test: null, danger: null, caution: null })
   expect(observe('Read', '', {})).toBe(null)
 })
 
@@ -107,10 +107,6 @@ test('TRUNCATE pattern strictness', async () => {
   expect(dangerKeyword('git commit -m "truncate long titles"')).toBe(null)
   expect(dangerKeyword('psql -c "truncate table logs"')).toBe('TRUNCATE')
   expect(dangerKeyword('sqlite3 a.db "TRUNCATE logs"')).toBe('TRUNCATE')
-})
-
-test('git clean dry run is not dangerous', async () => {
-  expect(dangerKeyword('git clean -nfd')).toBe(null)
 })
 
 test('Windows test command forms', async () => {
@@ -130,9 +126,9 @@ test('SQL keywords only count inside an SQL client', async () => {
 })
 
 test('Heredoc bodies are not commands', async () => {
-  expect(dangerKeyword("cat > clean.sh <<'EOF'\nrm -rf src\nEOF")).toBe(null)
-  expect(dangerKeyword('cat > clean.sh <<-EOF\nrm -rf src\nEOF\nls')).toBe(null)
-  expect(dangerKeyword("cat > x.sh <<'EOF'\necho hi\nEOF\nrm -rf src")).toBe('rm -rf')
+  expect(dangerKeyword("cat > clean.sh <<'EOF'\nrm -rf /\nEOF")).toBe(null)
+  expect(dangerKeyword('cat > clean.sh <<-EOF\nrm -rf /\nEOF\nls')).toBe(null)
+  expect(dangerKeyword("cat > x.sh <<'EOF'\necho hi\nEOF\nrm -rf /")).toBe('rm -rf')
   expect(isTestCommand('cat > run.sh <<EOF\nnpm test\nEOF')).toBe(false)
 })
 
@@ -146,11 +142,11 @@ test('The test runner must be the command word', async () => {
 })
 
 test('Denied or failed calls are not dangerous', async () => {
-  expect(observe('Bash', 'git reset --hard', { isError: true })).toEqual({ failed: true, test: null, danger: null })
+  expect(observe('Bash', 'rm -rf /', { isError: true })).toEqual({ failed: true, test: null, danger: null, caution: null })
 })
 
 test('observe with dangerous commands and non-shell tools', async () => {
-  expect(observe('Bash', 'rm -rf x', {})).toEqual({ failed: false, test: null, danger: 'rm -rf' })
-  expect(observe('PowerShell', 'git reset --hard', {})).toEqual({ failed: false, test: null, danger: 'git reset --hard' })
-  expect(observe('Read', 'rm -rf x', {})).toBe(null)
+  expect(observe('Bash', 'rm -rf .', {})).toEqual({ failed: false, test: null, danger: 'rm -rf', caution: null })
+  expect(observe('PowerShell', 'git push -f', {})).toEqual({ failed: false, test: null, danger: 'git push --force', caution: null })
+  expect(observe('Read', 'rm -rf .', {})).toBe(null)
 })

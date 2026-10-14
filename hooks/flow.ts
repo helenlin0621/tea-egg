@@ -3,7 +3,7 @@ import type { LocalTime } from './clock'
 import { isSpecialDay, specialEvent, specialMakeup, specialSeen, specialTurn } from './datemode'
 import type { Observation } from './detect'
 import { addActiveDay, flip, pauseClocks, refill, testObserved, tick, toolFailed, turnDone, type Step } from './engine'
-import { crack, dexText, settle } from './rules'
+import { caution, crack, dexText, settle } from './rules'
 import { decodeSpoilers } from './spoilers'
 import { T, fill } from './text'
 
@@ -31,10 +31,8 @@ export function onSessionOpen(prev: Save, now: number, t: LocalTime, isNewSessio
   save.clocks.bucketActive = false
   const made = then(step, s => specialMakeup(s, t))
   if (isSpecialDay(t)) return then(made, s => specialSeen(s, t))
-  if (isNewSession) {
-    made.save.egg.record.sessionCount += 1
-    addActiveDay(made.save, t)
-  }
+  // The session itself is counted on its first prompt (usage.ts): opening one without using it doesn't count
+  if (isNewSession) addActiveDay(made.save, t)
   return made
 }
 
@@ -58,6 +56,8 @@ export function onObserved(prev: Save, now: number, t: LocalTime, obs: Observati
   let step: Step = { save: prev, effects: [] }
   if (obs.test !== null) step = then(step, s => testObserved(s, obs.test === 'pass'))
   if (obs.failed) step = then(step, s => toolFailed(s))
+  const risky = obs.caution
+  if (risky) step = then(step, s => caution(s, risky, now, rng))
   return step
 }
 

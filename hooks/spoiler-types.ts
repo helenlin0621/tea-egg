@@ -2,11 +2,14 @@
 import type { Lang } from './i18n'
 
 export type Rule =
-  | { egg: string; when: 'cracked' }
+  | { egg: string; when: 'cracked'; cautions: number } // cautions: risky commands per egg that also crack it
   | { egg: string; when: 'chance'; p: number }
   | { egg: string; when: 'gapAtLeast'; days: number }
   | { egg: string; when: 'failRateAbove'; minRuns: number; rate: number }
   | { egg: string; when: 'ageAtLeast'; days: number }
+  | { egg: string; when: 'dryAtLeast'; minutes: number }
+  // dayMinutes: minutes of 2+ sessions in use at once that make a day count
+  | { egg: string; when: 'multiDaysAtLeast'; days: number; ratio: number; dayMinutes: number }
   | { egg: string; when: 'avgSessionAbove'; minutes: number }
   | { egg: string; when: 'avgSessionBelow'; minutes: number }
   | { egg: string; when: 'always' }
