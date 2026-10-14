@@ -66,6 +66,8 @@ declare module 'claude-code' {
       bandHidden: boolean
       // Another load identity's save offered for copying, or null
       syncOffer: { save: Save; fingerprint: string } | null
+      // The person pressed Sync and is being asked to confirm the overwrite
+      syncConfirming: boolean
     }
   }
 }

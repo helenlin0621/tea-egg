@@ -2,7 +2,7 @@ import { update, type EngineInterface, type Register, type Timer } from 'claude-
 import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTime } from './clock'
 import { observe, OBSERVED_TOOLS } from './detect'
 import { dexTitle, onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
-import { BAND_STORE_KEY, FAKE_STORE_KEY, STORE_KEY, SYNC_BACKUP_KEY, SYNC_DISMISSED_KEY } from './model'
+import { BAND_STORE_KEY, FAKE_STORE_KEY, STORE_KEY, SYNC_DISMISSED_KEY } from './model'
 import { compareLines, offerFor, type SyncOffer } from './sync'
 import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, previewArt, SVG_PX, type Art } from './panel'
 import { dexCaption, dexHeader } from './rules'
@@ -23,6 +23,7 @@ const COUNTED_REF = { plugin: 'tea-egg', key: 'sessionCounted' } as const
 const PREVIEW_REF = { plugin: 'tea-egg', key: 'preview' } as const
 const BAND_REF = { plugin: 'tea-egg', key: 'bandHidden' } as const
 const SYNC_REF = { plugin: 'tea-egg', key: 'syncOffer' } as const
+const SYNC_CONFIRM_REF = { plugin: 'tea-egg', key: 'syncConfirming' } as const
 
 export const PANE = 'tea-egg'
 const TICK_MS = 60_000
@@ -163,25 +164,44 @@ async function findSyncOffer($: EngineInterface, announce: boolean): Promise<Syn
   return offer
 }
 
-// Copy the offered save over ours, keeping ours as a backup; false when there is nothing to copy
-async function acceptSync($: EngineInterface): Promise<boolean> {
-  const offer = (await $.state.get(SYNC_REF)).value ?? (await findSyncOffer($, false))
-  if (!offer) return false
-  const own = await $.store.get(STORE_KEY)
-  if (own !== undefined) await $.store.set(SYNC_BACKUP_KEY, own)
+const currentOffer = async ($: EngineInterface): Promise<SyncOffer | null> =>
+  (await $.state.get(SYNC_REF)).value ?? (await findSyncOffer($, false))
+
+// Step 1 of syncing: the person chose Sync; ask them to confirm the overwrite. false when there is nothing to copy
+async function askSync($: EngineInterface): Promise<boolean> {
+  if (!(await currentOffer($))) return false
+  await $.state.set(SYNC_CONFIRM_REF, true)
+  return true
+}
+
+// Step 2: overwrite ours with the offered save, no backup (the person confirmed it can't be undone)
+async function confirmSync($: EngineInterface): Promise<'done' | 'ask-first' | 'nothing'> {
+  if ((await $.state.get(SYNC_CONFIRM_REF)).value !== true) return 'ask-first'
+  await $.state.set(SYNC_CONFIRM_REF, false)
+  const offer = await currentOffer($)
+  if (!offer) return 'nothing'
   await mutate(ioOf($), () => ({ save: offer.save, effects: [] }))
   await $.state.set(SYNC_REF, null)
-  return true
+  return 'done'
+}
+
+// Back out of the confirmation; the offer stays, so it is not a "No"
+async function cancelSync($: EngineInterface): Promise<void> {
+  await $.state.set(SYNC_CONFIRM_REF, false)
 }
 
 // Keep ours and don't ask again until the other save changes; false when there was nothing to decline
 async function declineSync($: EngineInterface): Promise<boolean> {
-  const offer = (await $.state.get(SYNC_REF)).value ?? (await findSyncOffer($, false))
+  await $.state.set(SYNC_CONFIRM_REF, false)
+  const offer = await currentOffer($)
   if (!offer) return false
   await $.store.set(SYNC_DISMISSED_KEY, offer.fingerprint)
   await $.state.set(SYNC_REF, null)
   return true
 }
+
+const confirmReply = (r: 'done' | 'ask-first' | 'nothing') =>
+  r === 'done' ? T().sync.accepted : r === 'ask-first' ? T().sync.confirmFirst : T().sync.nothing
 
 // Activate only once per load; keep the timer handle and cancel it before registering again
 let tick: Timer | null = null
@@ -406,15 +426,19 @@ export const register: Register = on => {
           // A button error must never affect the user
         }
       }
-      const syncPress = (accept: boolean) => async () => {
+      const syncPress = (choice: 'yes' | 'no' | 'overwrite' | 'cancel') => async () => {
         try {
-          if (accept) $.ui.toast((await acceptSync($)) ? T().sync.accepted : T().sync.nothing)
+          if (choice === 'yes') {
+            if (!(await askSync($))) $.ui.toast(T().sync.nothing)
+          } else if (choice === 'overwrite') $.ui.toast(confirmReply(await confirmSync($)))
+          else if (choice === 'cancel') await cancelSync($)
           else $.ui.toast((await declineSync($)) ? T().sync.declined : T().sync.nothing)
         } catch {
           // A button error must never affect the user
         }
       }
       const offer = (await $.state.get(SYNC_REF)).value ?? null
+      const confirming = (await $.state.get(SYNC_CONFIRM_REF)).value === true
       const slots = decodeSpoilers().dexSlots
       const preview = (await $.state.get(PREVIEW_REF)).value ?? null
       const art = preview !== null ? previewArt(preview, e.surface, columns) : eggArt(save, t, now, e.surface, columns)
@@ -430,10 +454,20 @@ export const register: Register = on => {
               {compareLines(save, offer.save, localNow).map((line, i) => (
                 <Text key={`sync-line-${i}`} color={i === 0 ? 'yellow' : undefined}>{line}</Text>
               ))}
-              <Box key="sync-buttons">
-                <Button key="sync-yes" label={T().sync.yes} onPress={syncPress(true)} />
-                <Button key="sync-no" label={T().sync.no} onPress={syncPress(false)} />
-              </Box>
+              {confirming ? (
+                <Box key="sync-confirm" flexDirection="column">
+                  <Text key="sync-confirm-text" color="red">{T().sync.confirm}</Text>
+                  <Box key="sync-confirm-buttons">
+                    <Button key="sync-overwrite" label={T().sync.overwrite} onPress={syncPress('overwrite')} />
+                    <Button key="sync-cancel" label={T().sync.cancel} onPress={syncPress('cancel')} />
+                  </Box>
+                </Box>
+              ) : (
+                <Box key="sync-buttons">
+                  <Button key="sync-yes" label={T().sync.yes} onPress={syncPress('yes')} />
+                  <Button key="sync-no" label={T().sync.no} onPress={syncPress('no')} />
+                </Box>
+              )}
             </Box>
           )}
           {draw(art, 'egg')}
@@ -486,7 +520,15 @@ export const register: Register = on => {
       if (args === '') return { text: (await togglePane($)) ? T().paneOpened : T().paneClosed }
       if (args === 'band') return { text: (await toggleBand($)) ? T().bandHidden : T().bandShown }
       // Another load identity's save: compare, copy it over ours, or keep ours
-      if (args === 'sync yes') return { text: (await acceptSync($)) ? T().sync.accepted : T().sync.nothing }
+      if (args === 'sync yes') {
+        if (!(await askSync($))) return { text: T().sync.nothing }
+        return { text: [T().sync.confirm, T().sync.confirmUsage].join('\n') }
+      }
+      if (args === 'sync confirm') return { text: confirmReply(await confirmSync($)) }
+      if (args === 'sync cancel') {
+        await cancelSync($)
+        return { text: T().sync.cancelled }
+      }
       if (args === 'sync no') return { text: (await declineSync($)) ? T().sync.declined : T().sync.nothing }
       if (args === 'sync') {
         // Always look again: the other save may have moved on since this session started

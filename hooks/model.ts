@@ -8,8 +8,6 @@ export const FAKE_STORE_KEY = 'tea-egg/v1-fake'
 export const BAND_STORE_KEY = 'tea-egg/band-hidden'
 // The fingerprint of another identity's save the person chose not to copy; asked again once that save changes
 export const SYNC_DISMISSED_KEY = 'tea-egg/sync-dismissed'
-// Our save as it was just before a sync copied another identity's save over it
-export const SYNC_BACKUP_KEY = 'tea-egg/v1-before-sync'
 
 export function newRecord(now: number): EggRecord {
   return {

@@ -34,10 +34,16 @@ export type Text = {
     none: string
     usage: string
     nothing: string
+    confirm: string
+    confirmUsage: string
+    confirmFirst: string
     accepted: string
+    cancelled: string
     declined: string
     yes: string
     no: string
+    overwrite: string
+    cancel: string
   }
   // Name shown on the pane and in the /egg command description
   title: string
@@ -90,10 +96,16 @@ const ZH: Text = {
     none: '（沒有存檔）',
     usage: '輸入 /egg sync yes 同步，/egg sync no 不同步',
     nothing: '沒有其他需要同步的存檔',
-    accepted: '已同步：目前這份換成另一份的進度（原本的已備份）',
+    confirm: '確定要用另一份覆蓋目前這份嗎？目前這份會被蓋掉，無法復原。',
+    confirmUsage: '輸入 /egg sync confirm 確定覆蓋，/egg sync cancel 取消',
+    confirmFirst: '請先輸入 /egg sync yes 確認要同步哪一份',
+    accepted: '已同步：目前這份換成另一份的進度',
+    cancelled: '已取消，目前這份沒有被覆蓋',
     declined: '不同步。那份存檔沒有新進度前不會再問',
     yes: '同步',
     no: '不要',
+    overwrite: '確定覆蓋',
+    cancel: '取消',
   },
   bandShown: '已顯示橫條',
   unknown: '不認得這個指令，輸入 /egg help 看看',
@@ -177,10 +189,16 @@ const EN: Text = {
     none: '(no save)',
     usage: 'Type /egg sync yes to copy it over, /egg sync no to keep this one',
     nothing: 'No other save to sync',
-    accepted: "Synced: this save now has the other one's progress (the old one is backed up)",
+    confirm: 'Replace this save with the other one? This save will be overwritten and cannot be recovered.',
+    confirmUsage: 'Type /egg sync confirm to overwrite, /egg sync cancel to back out',
+    confirmFirst: 'Type /egg sync yes first to choose the save to copy',
+    accepted: "Synced: this save now has the other one's progress",
+    cancelled: 'Cancelled. This save was not overwritten',
     declined: "Kept this one. You won't be asked again until the other save changes",
     yes: 'Sync',
     no: 'No',
+    overwrite: 'Overwrite',
+    cancel: 'Cancel',
   },
   bandShown: 'Band shown',
   unknown: 'Unknown command. Try /egg help',

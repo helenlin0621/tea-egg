@@ -1,5 +1,5 @@
 import { test, expect, mock } from 'claude-code/testing'
-import { newSave, STORE_KEY, SYNC_BACKUP_KEY, SYNC_DISMISSED_KEY } from '../hooks/model'
+import { newSave, STORE_KEY, SYNC_DISMISSED_KEY } from '../hooks/model'
 import { compareLines, fingerprint, offerFor, pickOther } from '../hooks/sync'
 import { setLang } from '../hooks/i18n'
 import type { Save } from '../types'
@@ -83,7 +83,7 @@ function setup(on: On, store: Store, others: Record<string, unknown>, toasts: st
 const egg = async ($: { command: { run: (i: never) => Promise<{ text?: string }> } }, args: string) =>
   (await $.command.run({ command: 'egg', args, origin: PERSON } as never)).text ?? ''
 
-test('Another save is announced, compared, and copied over ours on yes; ours is backed up', async ($, on) => {
+test('Another save is announced and compared; yes asks first, confirm overwrites with no backup', async ($, on) => {
   const toasts: string[] = []
   const mine = save(1, Date.UTC(2026, 9, 14, 1), {}, 16)
   const theirs = save(13, Date.UTC(2026, 9, 13, 17), { e1: 12 }, 32)
@@ -94,10 +94,15 @@ test('Another save is announced, compared, and copied over ours on yes; ours is 
   const shown = await egg($, 'sync')
   expect(shown).toContain('#13')
   expect(shown).toContain('/egg sync yes')
-  expect(await egg($, 'sync yes')).toContain('已同步')
+  const asked = await egg($, 'sync yes')
+  expect(asked).toContain('無法復原')
+  expect(asked).toContain('/egg sync confirm')
+  expect((store[STORE_KEY] as Save).egg.no).toBe(1)
+  expect(await egg($, 'sync confirm')).toContain('已同步')
   expect((store[STORE_KEY] as Save).egg.no).toBe(13)
   expect((store[STORE_KEY] as Save).dex).toEqual({ e1: 12 })
-  expect((store[SYNC_BACKUP_KEY] as Save).egg.no).toBe(1)
+  // No backup is kept: the store only holds the save itself
+  expect(Object.keys(store).filter(k => k.startsWith('tea-egg/v1'))).toEqual([STORE_KEY])
   expect(await egg($, 'sync')).toContain('沒有其他')
 })
 
@@ -112,6 +117,21 @@ test('No keeps ours, remembers the choice, and the other file is never written',
   expect((store[STORE_KEY] as Save).egg.no).toBe(4)
   expect(store[SYNC_DISMISSED_KEY]).toBe(fingerprint(theirs))
   expect(await egg($, 'sync')).toContain('沒有其他')
+})
+
+test('Confirm without yes does nothing; cancel backs out and the offer stays', async ($, on) => {
+  const toasts: string[] = []
+  const store: Store = { [STORE_KEY]: save(1, Date.UTC(2026, 9, 14, 1)) }
+  setup(on, store, { 'tea-egg_inline-1.json': { [STORE_KEY]: save(13, Date.UTC(2026, 9, 13, 17)) } }, toasts)
+  await $.session.start(START)
+  expect(await egg($, 'sync confirm')).toContain('/egg sync yes')
+  expect((store[STORE_KEY] as Save).egg.no).toBe(1)
+  await egg($, 'sync yes')
+  expect(await egg($, 'sync cancel')).toContain('已取消')
+  expect(await egg($, 'sync confirm')).toContain('/egg sync yes')
+  expect((store[STORE_KEY] as Save).egg.no).toBe(1)
+  expect(store[SYNC_DISMISSED_KEY]).toBe(undefined)
+  expect(await egg($, 'sync')).toContain('#13')
 })
 
 test('Only one save: no announcement', async ($, on) => {
@@ -131,7 +151,7 @@ const PANE_PROPS = {
   view: {},
 } as const
 
-test('The pane shows the comparison with Sync / No buttons on both surfaces, and Sync copies', async ($, on) => {
+test('The pane: Sync asks to confirm, Cancel backs out, Overwrite copies', async ($, on) => {
   const toasts: string[] = []
   const store: Store = { [STORE_KEY]: save(1, Date.UTC(2026, 9, 14, 1)) }
   setup(on, store, { 'tea-egg_inline-1.json': { [STORE_KEY]: save(13, Date.UTC(2026, 9, 13, 17), { e1: 12 }) } }, toasts)
@@ -140,8 +160,15 @@ test('The pane shows the comparison with Sync / No buttons on both surfaces, and
     const ui = await $.ui.mount({ plugin: 'tea-egg', surface, component: 'Pane', requestId: 'tea-egg', props: PANE_PROPS })
     expect(await ui.find({ type: 'Text', text: /發現另一份存檔/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /另一份.*#13/ })).toBeDefined()
-    if (surface === 'desktop') {
-      await ui.press({ key: 'sync-yes' })
+    await ui.press({ key: 'sync-yes' })
+    expect(await ui.find({ type: 'Text', text: /無法復原/ })).toBeDefined()
+    expect((store[STORE_KEY] as Save).egg.no).toBe(1)
+    if (surface === 'terminal') {
+      await ui.press({ key: 'sync-cancel' })
+      expect(await ui.find({ type: 'Text', text: /無法復原/ })).toBe(undefined)
+      expect(await ui.find({ type: 'Text', text: /發現另一份存檔/ })).toBeDefined()
+    } else {
+      await ui.press({ key: 'sync-overwrite' })
       expect((store[STORE_KEY] as Save).egg.no).toBe(13)
     }
     await ui.unmount()
