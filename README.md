@@ -19,7 +19,7 @@ In Claude Code, run:
 
 Requires Claude Code 2.1.289 or later (update with `claude update`).
 
-Keep to one way of loading it. Claude keeps a separate save for each way a plugin is loaded (an install, `--plugin-dir`), so Tea Egg stays off when another save already exists instead of splitting your progress.
+Claude keeps a separate save for each way a plugin is loaded (an install, `--plugin-dir`). If Tea Egg finds a different save from another way of loading it, it asks before anything changes: type `/egg sync` to compare the two and copy the other one over (yours is backed up first).
 
 ## Update
 
@@ -39,6 +39,7 @@ Then restart Claude Code.
 | `/egg flip` | Flip the egg |
 | `/egg dex` | Show the Eggdex |
 | `/egg band` | Hide/show the band above the prompt (stays that way until you run it again; the × on the band hides it too) |
+| `/egg sync` | Compare with a save left by another way of loading Tea Egg; `/egg sync yes` copies it over, `/egg sync no` keeps yours |
 | `/egg name <name>` | Name the current egg |
 | `/egg help` | Help |
 

@@ -2,7 +2,8 @@ import { update, type EngineInterface, type Register, type Timer } from 'claude-
 import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTime } from './clock'
 import { observe, OBSERVED_TOOLS } from './detect'
 import { dexTitle, onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
-import { BAND_STORE_KEY, FAKE_STORE_KEY, STORE_KEY } from './model'
+import { BAND_STORE_KEY, FAKE_STORE_KEY, STORE_KEY, SYNC_BACKUP_KEY, SYNC_DISMISSED_KEY } from './model'
+import { compareLines, offerFor, type SyncOffer } from './sync'
 import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, previewArt, SVG_PX, type Art } from './panel'
 import { dexCaption, dexHeader } from './rules'
 import { decodeSpoilers } from './spoilers'
@@ -18,6 +19,7 @@ const SHOW_DEX_REF = { plugin: 'tea-egg', key: 'showDex' } as const
 const COUNTED_REF = { plugin: 'tea-egg', key: 'sessionCounted' } as const
 const PREVIEW_REF = { plugin: 'tea-egg', key: 'preview' } as const
 const BAND_REF = { plugin: 'tea-egg', key: 'bandHidden' } as const
+const SYNC_REF = { plugin: 'tea-egg', key: 'syncOffer' } as const
 
 export const PANE = 'tea-egg'
 const TICK_MS = 60_000
@@ -75,67 +77,65 @@ async function loadBand($: EngineInterface): Promise<void> {
 
 // Flip the band's hidden flag; returns whether it is hidden now
 async function toggleBand($: EngineInterface): Promise<boolean> {
-  if (await checkBlocked($)) return (await $.state.get(BAND_REF)).value === true
   const hidden = (await $.state.get(BAND_REF)).value !== true
   await $.store.set(BAND_STORE_KEY, hidden)
   await $.state.set(BAND_REF, hidden)
   return hidden
 }
 
-// Claude keeps one store file per load identity (tea-egg@<marketplace> installed, tea-egg@inline by --plugin-dir),
-// so loading the Mod a second way would start a second, diverging save. Any one identity may keep the save;
-// this load stays off while a different tea-egg save already exists in the store folder.
-// Installed copies run from <config>/plugins/cache/<marketplace>/<plugin>/<version>
-const INSTALLED_ROOT = /[\\/]plugins[\\/]cache[\\/][^\\/]+[\\/]tea-egg[\\/][^\\/]+[\\/]?$/
+// Claude keeps one store file per load identity (tea-egg@<marketplace> installed, tea-egg@inline by --plugin-dir).
+// This load only writes its own save; the other tea-egg store files are read so the person can choose to copy one over.
 const STORE_FILE = /^tea-egg_.+\.json$/
-// null until checked; checked once per load
-let blocked: boolean | null = null
 
-// The saves in other tea-egg store files that differ from ours; null when the folder can't be read
-async function otherSaves($: EngineInterface, mine: string): Promise<number | null> {
+// The real saves in every tea-egg store file (ours included; pickOther skips the one equal to ours)
+async function storeFileSaves($: EngineInterface): Promise<unknown[]> {
   try {
     const configDir =
       (await $.env.get('CLAUDE_CONFIG_DIR')) ??
       `${(await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''}/.claude`
     const dir = `${configDir}/plugins/store`
-    let count = 0
+    const saves: unknown[] = []
     for (const entry of await $.fs.list(dir)) {
       if (entry.kind !== 'file' || !STORE_FILE.test(entry.name)) continue
-      let theirs: unknown
       try {
-        theirs = (JSON.parse((await $.fs.read(`${dir}/${entry.name}`)) as string) as Record<string, unknown>)[STORE_KEY]
+        saves.push((JSON.parse((await $.fs.read(`${dir}/${entry.name}`)) as string) as Record<string, unknown>)[STORE_KEY])
       } catch {
-        continue // A file mid-write or unreadable is not a save
+        // A file mid-write or unreadable is skipped
       }
-      if (theirs !== undefined && JSON.stringify(theirs) !== mine) count++
     }
-    return count
+    return saves
   } catch {
-    return null
+    return []
   }
 }
 
-async function isOnlySave($: EngineInterface): Promise<boolean> {
-  // Tests run the Mod with an in-memory store, never a real second save
-  if ((await $.env.get('TEA_EGG_TEST_ANY_LOAD')) === '1') return true
-  // Read twice: another session may be writing its save while we compare
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const mine = JSON.stringify(await $.store.get(STORE_KEY))
-    const others = await otherSaves($, mine)
-    // Can't see the store folder: trust installed copies only
-    if (others === null) return INSTALLED_ROOT.test($.plugin.root)
-    if (others === 0) return true
-  }
-  return false
+// Look for another save to offer; shows the offer in state and toasts once when there is one
+async function findSyncOffer($: EngineInterface, announce: boolean): Promise<SyncOffer | null> {
+  if (clock.fake) return null
+  const offer = offerFor(await $.store.get(STORE_KEY), await storeFileSaves($), await $.store.get(SYNC_DISMISSED_KEY))
+  await $.state.set(SYNC_REF, offer)
+  if (offer && announce) $.ui.toast(T().sync.found)
+  return offer
 }
 
-// Returns true when this load must stay off; toasts the reason once
-async function checkBlocked($: EngineInterface): Promise<boolean> {
-  if (blocked === null) {
-    blocked = !(await isOnlySave($))
-    if (blocked) $.ui.toast(T().wrongLoad)
-  }
-  return blocked
+// Copy the offered save over ours, keeping ours as a backup; false when there is nothing to copy
+async function acceptSync($: EngineInterface): Promise<boolean> {
+  const offer = (await $.state.get(SYNC_REF)).value ?? (await findSyncOffer($, false))
+  if (!offer) return false
+  const own = await $.store.get(STORE_KEY)
+  if (own !== undefined) await $.store.set(SYNC_BACKUP_KEY, own)
+  await mutate(ioOf($), () => ({ save: offer.save, effects: [] }))
+  await $.state.set(SYNC_REF, null)
+  return true
+}
+
+// Keep ours and don't ask again until the other save changes; false when there was nothing to decline
+async function declineSync($: EngineInterface): Promise<boolean> {
+  const offer = (await $.state.get(SYNC_REF)).value ?? (await findSyncOffer($, false))
+  if (!offer) return false
+  await $.store.set(SYNC_DISMISSED_KEY, offer.fingerprint)
+  await $.state.set(SYNC_REF, null)
+  return true
 }
 
 // Activate only once per load; keep the timer handle and cancel it before registering again
@@ -178,12 +178,7 @@ function watchForSurface($: EngineInterface): void {
 async function activate($: EngineInterface): Promise<void> {
   // Claim the slot synchronously so start and attach arriving together don't activate twice
   if (interactive) return
-  if (blocked === true) return
   interactive = true
-  if (await checkBlocked($)) {
-    interactive = false
-    return
-  }
   try {
     // Also decided here in case this load never saw session.start
     setLang(detectLang(await $.env.get('TEA_EGG_LANG')))
@@ -192,6 +187,11 @@ async function activate($: EngineInterface): Promise<void> {
       offsetMinutes: systemOffset,
       fake: parseFakeDate(await $.env.get('TEA_EGG_FAKE_DATE')),
       loadedAt: now,
+    }
+    try {
+      await findSyncOffer($, true)
+    } catch {
+      // No offer when the other saves can't be read
     }
     const counted = (await $.state.get(COUNTED_REF)).value === true
     await mutate(ioOf($), (s, at) => onSessionOpen(s, at, localNow(at), !counted))
@@ -359,6 +359,15 @@ export const register: Register = on => {
           // A button error must never affect the user
         }
       }
+      const syncPress = (accept: boolean) => async () => {
+        try {
+          if (accept) $.ui.toast((await acceptSync($)) ? T().sync.accepted : T().sync.nothing)
+          else $.ui.toast((await declineSync($)) ? T().sync.declined : T().sync.nothing)
+        } catch {
+          // A button error must never affect the user
+        }
+      }
+      const offer = (await $.state.get(SYNC_REF)).value ?? null
       const slots = decodeSpoilers().dexSlots
       const preview = (await $.state.get(PREVIEW_REF)).value ?? null
       const art = preview !== null ? previewArt(preview, e.surface, columns) : eggArt(save, t, now, e.surface, columns)
@@ -368,6 +377,17 @@ export const register: Register = on => {
             <Text key="preview" dimColor>
               {previewText(T().previewBanner, preview)}
             </Text>
+          )}
+          {offer !== null && (
+            <Box key="sync" flexDirection="column" marginBottom={1}>
+              {compareLines(save, offer.save, localNow).map((line, i) => (
+                <Text key={`sync-line-${i}`} color={i === 0 ? 'yellow' : undefined}>{line}</Text>
+              ))}
+              <Box key="sync-buttons">
+                <Button key="sync-yes" label={T().sync.yes} onPress={syncPress(true)} />
+                <Button key="sync-no" label={T().sync.no} onPress={syncPress(false)} />
+              </Box>
+            </Box>
           )}
           {draw(art, 'egg')}
           {panelLines(save, t, now).map((line, i) => <Text key={String(i)}>{line}</Text>)}
@@ -414,11 +434,20 @@ export const register: Register = on => {
     try {
       // Someone typed /egg by hand, so someone is watching (on desktop the attach signal may come before the Mod loads and be missed)
       if (!interactive && e.origin.kind !== 'plugin') await activate($)
-      if (blocked === true) return { text: T().wrongLoad }
       if (!interactive) return { text: T().help }
       const args = e.args.trim()
       if (args === '') return { text: (await togglePane($)) ? T().paneOpened : T().paneClosed }
       if (args === 'band') return { text: (await toggleBand($)) ? T().bandHidden : T().bandShown }
+      // Another load identity's save: compare, copy it over ours, or keep ours
+      if (args === 'sync yes') return { text: (await acceptSync($)) ? T().sync.accepted : T().sync.nothing }
+      if (args === 'sync no') return { text: (await declineSync($)) ? T().sync.declined : T().sync.nothing }
+      if (args === 'sync') {
+        // Always look again: the other save may have moved on since this session started
+        const offer = await findSyncOffer($, false)
+        if (!offer) return { text: T().sync.nothing }
+        const lines = compareLines(await $.store.get(STORE_KEY), offer.save, localNow)
+        return { text: [...lines, T().sync.usage].join('\n') }
+      }
       // Dev preview: only switches the displayed sprite; never reads or changes the save
       if (args === 'preview' || args.startsWith('preview ')) {
         const current = (await $.state.get(PREVIEW_REF)).value ?? null

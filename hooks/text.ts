@@ -24,7 +24,21 @@ export type Text = {
   unknown: string
   error: string
   help: string
-  wrongLoad: string
+  sync: {
+    found: string
+    title: string
+    current: string
+    other: string
+    question: string
+    line: string // {name} {no} {flavor} {kinds} {count} {when}
+    none: string
+    usage: string
+    nothing: string
+    accepted: string
+    declined: string
+    yes: string
+    no: string
+  }
   // Name shown on the pane and in the /egg command description
   title: string
   commandDescription: string
@@ -66,7 +80,21 @@ const ZH: Text = {
   paneOpened: '已開啟茶葉蛋面板',
   paneClosed: '已關閉茶葉蛋面板',
   bandHidden: '已隱藏橫條，輸入 /egg band 可再顯示',
-  wrongLoad: '茶葉蛋已經有另一份存檔（用別的方式載入時建立的，例如安裝版和 --plugin-dir），為了不讓進度分岔，本次不啟動。請改用原本的載入方式。',
+  sync: {
+    found: '發現另一份茶葉蛋存檔（用別的方式載入時留下的），輸入 /egg sync 查看',
+    title: '發現另一份存檔：',
+    current: '目前這份：',
+    other: '另一份：　',
+    question: '要用另一份覆蓋目前這份嗎？',
+    line: '{name} #{no}、入味 {flavor}%、圖鑑 {kinds} 種（{count} 次），最後遊玩 {when}',
+    none: '（沒有存檔）',
+    usage: '輸入 /egg sync yes 同步，/egg sync no 不同步',
+    nothing: '沒有其他需要同步的存檔',
+    accepted: '已同步：目前這份換成另一份的進度（原本的已備份）',
+    declined: '不同步。那份存檔沒有新進度前不會再問',
+    yes: '同步',
+    no: '不要',
+  },
   bandShown: '已顯示橫條',
   unknown: '不認得這個指令，輸入 /egg help 看看',
   error: '蛋暫時聯絡不上，稍後再試 🥚',
@@ -77,6 +105,7 @@ const ZH: Text = {
     '/egg flip       翻面',
     '/egg dex        顯示圖鑑',
     '/egg band       隱藏／顯示輸入框上方的橫條',
+    '/egg sync       比較／同步另一份存檔',
     '/egg name 名字  幫目前的蛋取名',
     '/egg help       說明',
   ].join('\n'),
@@ -138,7 +167,21 @@ const EN: Text = {
   paneOpened: 'Tea egg panel opened',
   paneClosed: 'Tea egg panel closed',
   bandHidden: 'Band hidden. Type /egg band to bring it back',
-  wrongLoad: 'Tea Egg already has a save from another way of loading it (e.g. the install vs --plugin-dir), so it stays off this session to keep your progress from splitting. Load it the way you usually do.',
+  sync: {
+    found: 'Found another Tea Egg save (left by another way of loading it). Type /egg sync to compare',
+    title: 'Found another save:',
+    current: 'This one:  ',
+    other: 'The other: ',
+    question: 'Replace this one with the other?',
+    line: '{name} #{no}, flavor {flavor}%, Eggdex {kinds} kinds ({count} eggs), last played {when}',
+    none: '(no save)',
+    usage: 'Type /egg sync yes to copy it over, /egg sync no to keep this one',
+    nothing: 'No other save to sync',
+    accepted: "Synced: this save now has the other one's progress (the old one is backed up)",
+    declined: "Kept this one. You won't be asked again until the other save changes",
+    yes: 'Sync',
+    no: 'No',
+  },
   bandShown: 'Band shown',
   unknown: 'Unknown command. Try /egg help',
   error: "Can't reach the egg right now. Try again later 🥚",
@@ -149,6 +192,7 @@ const EN: Text = {
     '/egg flip       Flip the egg',
     '/egg dex        Show the Eggdex',
     '/egg band       Hide/show the band above the prompt',
+    '/egg sync       Compare/sync another save',
     '/egg name NAME  Name the current egg',
     '/egg help       Show this help',
   ].join('\n'),

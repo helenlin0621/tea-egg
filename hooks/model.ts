@@ -6,6 +6,10 @@ export const STORE_KEY = 'tea-egg/v1'
 export const FAKE_STORE_KEY = 'tea-egg/v1-fake'
 // Whether the band above the prompt is hidden; kept apart from the save so it survives fake dates and egg resets
 export const BAND_STORE_KEY = 'tea-egg/band-hidden'
+// The fingerprint of another identity's save the person chose not to copy; asked again once that save changes
+export const SYNC_DISMISSED_KEY = 'tea-egg/sync-dismissed'
+// Our save as it was just before a sync copied another identity's save over it
+export const SYNC_BACKUP_KEY = 'tea-egg/v1-before-sync'
 
 export function newRecord(now: number): EggRecord {
   return {
@@ -50,7 +54,7 @@ export function newSave(now: number): Save {
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
-function isSave(v: unknown): v is Save {
+export function isSave(v: unknown): v is Save {
   if (!isObj(v) || v.version !== 1) return false
   const { egg, dex, daily, clocks, dateMode } = v
   if (!isObj(egg) || !isObj(egg.record) || !isObj(dex) || !isObj(daily) || !isObj(clocks) || !isObj(dateMode)) return false

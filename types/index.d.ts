@@ -51,6 +51,14 @@ export type Save = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'tea-egg': { save: Save | null; showDex: boolean; sessionCounted: boolean; preview: string | null; bandHidden: boolean }
+    'tea-egg': {
+      save: Save | null
+      showDex: boolean
+      sessionCounted: boolean
+      preview: string | null
+      bandHidden: boolean
+      // Another load identity's save offered for copying, or null
+      syncOffer: { save: Save; fingerprint: string } | null
+    }
   }
 }
