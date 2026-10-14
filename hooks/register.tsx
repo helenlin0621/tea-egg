@@ -82,39 +82,57 @@ async function toggleBand($: EngineInterface): Promise<boolean> {
   return hidden
 }
 
-// Claude names the store file after how the Mod was loaded, so only the installed identity (tea-egg@tea-egg) may
-// keep a save; any other load (--plugin-dir → tea-egg@inline) would start a second, diverging save.
-// File of the installed identity: tea-egg_ + first 12 hex of sha256("tea-egg@tea-egg")
-const CANONICAL_STORE_FILE = 'tea-egg_tea-egg-7a383064f644.json'
+// Claude keeps one store file per load identity (tea-egg@<marketplace> installed, tea-egg@inline by --plugin-dir),
+// so loading the Mod a second way would start a second, diverging save. Any one identity may keep the save;
+// this load stays off while a different tea-egg save already exists in the store folder.
 // Installed copies run from <config>/plugins/cache/<marketplace>/<plugin>/<version>
-const INSTALLED_ROOT = /[\\/]plugins[\\/]cache[\\/]tea-egg[\\/]tea-egg[\\/][^\\/]+[\\/]?$/
+const INSTALLED_ROOT = /[\\/]plugins[\\/]cache[\\/][^\\/]+[\\/]tea-egg[\\/][^\\/]+[\\/]?$/
+const STORE_FILE = /^tea-egg_.+\.json$/
 // null until checked; checked once per load
 let blocked: boolean | null = null
 
-async function isInstalledLoad($: EngineInterface): Promise<boolean> {
-  // Tests run the Mod from the repo folder with an in-memory store, never a real second save
-  if ((await $.env.get('TEA_EGG_TEST_ANY_LOAD')) === '1') return true
-  if (INSTALLED_ROOT.test($.plugin.root)) return true
-  // Not run from the install cache: allowed only if our store is the installed identity's file
+// The saves in other tea-egg store files that differ from ours; null when the folder can't be read
+async function otherSaves($: EngineInterface, mine: string): Promise<number | null> {
   try {
     const configDir =
       (await $.env.get('CLAUDE_CONFIG_DIR')) ??
       `${(await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''}/.claude`
-    const file = JSON.parse(
-      (await $.fs.read(`${configDir}/plugins/store/${CANONICAL_STORE_FILE}`)) as string,
-    ) as Record<string, unknown>
-    const theirs = file[STORE_KEY]
-    if (theirs === undefined) return false
-    return JSON.stringify(await $.store.get(STORE_KEY)) === JSON.stringify(theirs)
+    const dir = `${configDir}/plugins/store`
+    let count = 0
+    for (const entry of await $.fs.list(dir)) {
+      if (entry.kind !== 'file' || !STORE_FILE.test(entry.name)) continue
+      let theirs: unknown
+      try {
+        theirs = (JSON.parse((await $.fs.read(`${dir}/${entry.name}`)) as string) as Record<string, unknown>)[STORE_KEY]
+      } catch {
+        continue // A file mid-write or unreadable is not a save
+      }
+      if (theirs !== undefined && JSON.stringify(theirs) !== mine) count++
+    }
+    return count
   } catch {
-    return false
+    return null
   }
+}
+
+async function isOnlySave($: EngineInterface): Promise<boolean> {
+  // Tests run the Mod with an in-memory store, never a real second save
+  if ((await $.env.get('TEA_EGG_TEST_ANY_LOAD')) === '1') return true
+  // Read twice: another session may be writing its save while we compare
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const mine = JSON.stringify(await $.store.get(STORE_KEY))
+    const others = await otherSaves($, mine)
+    // Can't see the store folder: trust installed copies only
+    if (others === null) return INSTALLED_ROOT.test($.plugin.root)
+    if (others === 0) return true
+  }
+  return false
 }
 
 // Returns true when this load must stay off; toasts the reason once
 async function checkBlocked($: EngineInterface): Promise<boolean> {
   if (blocked === null) {
-    blocked = !(await isInstalledLoad($))
+    blocked = !(await isOnlySave($))
     if (blocked) $.ui.toast(T().wrongLoad)
   }
   return blocked
