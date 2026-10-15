@@ -1,5 +1,6 @@
 import { test, expect, mock } from 'claude-code/testing'
 import { decodeSpoilers } from '../hooks/spoilers'
+import { fill } from '../hooks/text'
 import type { ReplyDate, TimedDate } from '../hooks/spoiler-types'
 
 // Special dates through the real hooks: a fake date on the day, a prompt, the band's and the pane's buttons
@@ -7,6 +8,7 @@ const ZH = { TEA_EGG_LANG: 'zh-TW' }
 const pad = (n: number) => String(n).padStart(2, '0')
 const spec = <K extends 'timed' | 'reply'>(kind: K) =>
   Object.values(decodeSpoilers().dates).find(d => d.kind === kind) as Extract<TimedDate | ReplyDate, { kind: K }>
+const got = (d: TimedDate, n: number) => fill(d.lines.got, { n: String(n), need: String(d.need) })
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 120, scroll: { offset: 0, bodyRows: 4 }, view: {} } as const
 const PANE = { title: '茶葉蛋養成計畫', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } as const
 
@@ -25,7 +27,7 @@ function wire(on: Parameters<Parameters<typeof test>[1]>[1], fakeDate: string, s
   on('prompt.submit', (_, e) => ({ text: e.text }) as never)
 }
 
-test('Timed date: the first prompt starts it; the band shows a button with a hotkey that wins it', async ($, on) => {
+test('Timed date: the first prompt starts an ask; the band shows a button with a hotkey that answers it', async ($, on) => {
   const d = spec('timed')
   const toasts: string[] = []
   wire(on, `2026-${pad(d.month)}-${pad(d.day)}T10:00`, ['terminal'], toasts)
@@ -39,7 +41,7 @@ test('Timed date: the first prompt starts it; the band shows a button with a hot
   expect((button as { props?: { hotkey?: string } }).props?.hotkey).toBe(d.hotkey)
   expect(await band.find({ type: 'Text', text: /^\d:\d\d$/ })).toBeDefined()
   await band.press({ key: 'date-action' })
-  expect(toasts.some(x => x.startsWith(d.lines.won))).toBe(true)
+  expect(toasts).toContain(got(d, 1))
   expect(await band.find({ type: 'Button', key: 'date-action' })).toBeUndefined()
   await band.unmount()
 })
@@ -56,7 +58,7 @@ test('Timed date: on the pane, Refill becomes the day button', async ($, on) => 
   expect(refill?.props?.label).toBe(d.paneButton)
   expect(refill?.props?.hotkey).toBe(d.hotkey)
   await pane.press({ key: 'refill' })
-  expect(toasts.some(x => x.startsWith(d.lines.won))).toBe(true)
+  expect(toasts).toContain(got(d, 1))
   await pane.unmount()
 })
 

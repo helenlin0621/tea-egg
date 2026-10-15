@@ -100,9 +100,11 @@ export function bandSegments(s: Save, t: LocalTime, now: number): Seg[] {
   if (timed) {
     // No emoji left of the digits: the band redraws every second, and a terminal that draws emoji one column wide (the
     // desktop app's terminal pane) put every changing cell right of an emoji a column off, leaving stray characters.
-    // The timer's emoji sits right after the digits (always m:ss, so it never moves)
+    // The timer's emoji sits right after the digits (always m:ss, so it never moves). The count only gets its mark
+    // between asks, when nothing redraws every second
     const segs: Seg[] = [{ text: ` ${timed.look.face}` }, { text: `  ${s.egg.name} #${s.egg.no}`, keep: 1 }]
-    if (timed.timer !== null) segs.push(sep(), { text: timed.timer.digits, keep: 2 }, { text: ` ${timed.timer.icon}`, keep: 2 })
+    if (timed.timer !== null) segs.push(sep(), { text: timed.timer.digits, keep: 3 }, { text: ` ${timed.timer.icon}`, keep: 3 })
+    if (timed.count !== null) segs.push(sep(), { text: timed.count + (timed.mark !== null ? ` ${timed.mark}` : ''), keep: 2 })
     segs.push(sep(), { text: timed.look.text, dim: true })
     return segs
   }

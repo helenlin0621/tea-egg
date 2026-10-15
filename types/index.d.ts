@@ -44,11 +44,15 @@ export type DateModeYear = {
   lastToast: Record<string, number>
 }
 
-// A 'timed' special date (dates.ts), one per year. idle: the day came, no prompt yet; run: counting down from startedAt;
-// won / lost: settled. from: 'missed' when settled for someone who never played that day
+// A 'timed' special date (dates.ts), one per year. idle: the day came, no prompt yet; run: an ask counting down from
+// startedAt; rest: between asks, the next no earlier than nextAt; won / lost: settled. from: 'missed' when settled for
+// someone who never played that day
 export type TimedEntry = {
-  phase: 'idle' | 'run' | 'won' | 'lost'
+  phase: 'idle' | 'run' | 'rest' | 'won' | 'lost'
   startedAt?: number
+  nextAt?: number
+  got?: number // asks answered in time
+  asks?: number
   terminal?: boolean // a terminal was attached when it started: its toasts mention the fallback command
   warned?: boolean
   from?: 'live' | 'missed'

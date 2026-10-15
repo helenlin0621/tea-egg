@@ -41,22 +41,49 @@ export type DateMode = {
 export type BySurface = { desktop: string; terminal: string }
 export type BandLook = { icon: string; face: string; text: string }
 
-// A countdown on the day: the egg is paused and dressed up; press the button in time for one prize, or get the other
+// All day the egg is paused and dressed up. The day's first prompt, then the first prompt after each rest (drawn in
+// restMs when the last ask ended), starts an ask: press the button within `seconds` and it counts one, or it is missed.
+// With `need` candies or more the day gives one prize, otherwise the other; settled on the first open after the day
 export type TimedDate = {
   kind: 'timed'
   month: number
   day: number
   seconds: number
   warnSeconds: number
+  need: number
+  restMs: [number, number]
   dangerGapMs: number
   prizes: { won: string; lost: string }
   hotkey: string
   button: string // on the band
   paneButton: string // replaces Refill on the pane that day
   art: { base: string; face: string; warnFace: string } // egg layers stacked while counting down
-  band: { icon: string; face: string; warnFace: string; timer: string; ask: string; warnAsk: string; won: BandLook; lost: BandLook }
-  replies: { early: string; afterWon: string; afterLost: string; flip: string }
-  lines: { start: BySurface; warn: BySurface; won: string; lost: string; danger: string; over: string; makeup: string }
+  band: {
+    icon: string
+    face: string
+    warnFace: string
+    timer: string
+    ask: string
+    warnAsk: string
+    count: string // {n} {need}
+    mark: string // after the count between asks
+    rest: string
+    won: BandLook // won / lost: a day settled the old way (a single countdown), until the day is over
+    lost: BandLook
+  }
+  replies: { early: string; resting: string; afterWon: string; afterLost: string; flip: string }
+  // got / miss: {n} {need}; won / lost: {n}, the day's candies when it is settled
+  lines: {
+    start: BySurface
+    warn: BySurface
+    got: string
+    miss: string
+    won: string
+    lost: string
+    danger: string
+    over: string
+    makeup: string
+  }
 }
 
 // One egg handed over on the day's first prompt; the egg goes on as usual
