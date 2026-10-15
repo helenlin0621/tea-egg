@@ -8,7 +8,7 @@ export type StoreIo = {
   now: () => Promise<number>
   read: () => Promise<unknown>
   write: (save: Save) => Promise<void>
-  toast: (text: string) => void
+  toast: (text: string, order: number) => void // order: its place among the event's toasts (register.tsx spaces them out)
 }
 
 let queue: Promise<unknown> = Promise.resolve()
@@ -23,7 +23,7 @@ export function mutate(io: StoreIo, fn: (s: Save, now: number) => Step): Promise
     const now = await io.now()
     const step = fn(parseSave(await io.read(), now), now)
     await io.write(step.save)
-    for (const effect of step.effects) io.toast(effect.text)
+    step.effects.forEach((effect, i) => io.toast(effect.text, i))
     return step
   })
   queue = run.catch(() => undefined)

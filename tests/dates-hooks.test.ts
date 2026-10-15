@@ -1,6 +1,6 @@
 import { test, expect, mock } from 'claude-code/testing'
 import { decodeSpoilers } from '../hooks/spoilers'
-import { fill } from '../hooks/text'
+import { T, fill } from '../hooks/text'
 import type { ReplyDate, TimedDate } from '../hooks/spoiler-types'
 
 // Special dates through the real hooks: a fake date on the day, a prompt, the band's and the pane's buttons
@@ -92,6 +92,57 @@ test('Timed date: an ask started in another session shows up here within seconds
   await clock.advance(2_000)
   expect(await band.find({ type: 'Text', text: '4:53' })).toBeDefined()
   await band.unmount()
+})
+
+// A save in the shared store, as another load left it (fake date: the fake key)
+function editSave(shared: Record<string, unknown>, edit: (s: { installedOn: string; dateMode: Record<string, unknown> }) => void): void {
+  const key = Object.keys(shared).find(k => k.endsWith('-fake'))!
+  const save = structuredClone(shared[key]) as { installedOn: string; dateMode: Record<string, unknown> }
+  edit(save)
+  shared[key] = save
+}
+
+test('Several make-ups in one event each get their own toast, 3 seconds apart', async ($, on) => {
+  const shared: Record<string, unknown> = {}
+  const toasts: string[] = []
+  const clock = wire(on, '2026-11-01T09:00', ['desktop'], toasts, shared)
+  await $.session.start({ cwd: '.', surface: 'desktop', isInteractive: true })
+  // Installed long before, nothing since: every date of the past year is made up at once
+  editSave(shared, s => {
+    s.installedOn = '2025-12-01'
+    s.dateMode = {}
+  })
+  toasts.length = 0
+  await $.prompt.submit({ text: 'hi' })
+  const makeups = Object.values(decodeSpoilers().dates).filter(d => d.kind !== 'reply').length
+  expect(toasts).toHaveLength(1)
+  for (let n = 2; n <= makeups; n++) {
+    await clock.advance(3_000)
+    expect(toasts).toHaveLength(n)
+  }
+  expect(new Set(toasts).size).toBe(makeups)
+})
+
+test('Other toasts of one event follow each other 3 seconds apart', async ($, on) => {
+  const d = spec('timed')
+  const shared: Record<string, unknown> = {}
+  const toasts: string[] = []
+  const clock = wire(on, `2026-${pad(d.month)}-${pad(d.day + 1)}T09:00`, ['desktop'], toasts, shared)
+  await $.session.start({ cwd: '.', surface: 'desktop', isInteractive: true })
+  // Last night's ask ran out unanswered: missed, then the day settles (one make-up), in the same event
+  const id = Object.entries(decodeSpoilers().dates).find(([, x]) => x.kind === 'timed')![0]
+  editSave(shared, s => {
+    s.installedOn = '2026-10-01'
+    s.dateMode[`${id}:2026`] = { phase: 'run', startedAt: Date.UTC(2026, 9, 1, 1), from: 'live', got: 0, asks: 1, warned: true }
+  })
+  toasts.length = 0
+  await $.prompt.submit({ text: 'hi' })
+  const miss = fill(d.lines.miss, { n: '0', need: String(d.need) })
+  expect(toasts).toEqual([miss])
+  await clock.advance(2_900)
+  expect(toasts).toEqual([miss])
+  await clock.advance(200)
+  expect(toasts).toEqual([miss, fill(d.lines.lost, { n: '0' }) + T().newDex])
 })
 
 test('Reply date: /egg <command> is hidden from help and answers like an unknown command on other days', async ($, on) => {
