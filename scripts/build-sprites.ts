@@ -646,8 +646,13 @@ function readNative(file: string): Img | null {
   const png = PNG.sync.read(readFileSync(file))
   if (png.width !== SIZE || png.height !== SIZE) return null
   const img: Img = { width: SIZE, height: SIZE, data: new Uint8Array(png.data) }
+  // A file with a transparent background is taken as drawn: the magenta test would also punch out purples and pinks
+  // in the art itself (a purple hat lost its color). Only a file with no transparency has its magenta keyed out
+  let hasAlpha = false
+  for (let i = 3; i < img.data.length && !hasAlpha; i += 4) hasAlpha = img.data[i]! < 128
   for (let i = 0; i < img.data.length; i += 4) {
-    if (isMagenta([img.data[i]!, img.data[i + 1]!, img.data[i + 2]!, img.data[i + 3]!])) img.data.set([0, 0, 0, 0], i)
+    const clear = hasAlpha ? img.data[i + 3]! < 128 : isMagenta([img.data[i]!, img.data[i + 1]!, img.data[i + 2]!, img.data[i + 3]!])
+    if (clear) img.data.set([0, 0, 0, 0], i)
     else img.data[i + 3] = 255
   }
   return img
