@@ -56,10 +56,16 @@ const ioOf = ($: EngineInterface): StoreIo => ({
     await $.store.set(storeKey(), save)
     await $.state.set(SAVE_REF, save)
   },
-  toast: text => {
-    $.ui.toast(text)
-  },
+  toast: (text, order) => toastAt($, text, order),
 })
+
+// The desktop app shows only the first of several toasts sent at once: an event's later toasts wait their turn
+const TOAST_GAP_MS = 3_000
+
+function toastAt($: EngineInterface, text: string, order: number): void {
+  if (order === 0) $.ui.toast(text)
+  else $.clock.after(order * TOAST_GAP_MS, () => $.ui.toast(text))
+}
 
 // Time spent waiting for the person within the current turn (usage.ts leaves it out). A permission prompt counts
 // from when it is shown until its tool call ends (a command run after approval rides along, usually seconds);
@@ -283,7 +289,8 @@ async function armCountdown($: EngineInterface, save: Save): Promise<void> {
 // Run /egg <args> from a button (the band's or the pane's special-date button), toasting the reply
 async function pressArgs($: EngineInterface, args: string): Promise<void> {
   const step = await mutate(ioOf($), (s, at) => onCommand(s, at, localNow(at), args, rng))
-  if (step.reply) $.ui.toast(step.reply)
+  // After the toasts the press itself set off
+  if (step.reply) toastAt($, step.reply, step.effects.length)
   await armCountdown($, step.save)
 }
 
