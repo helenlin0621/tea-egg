@@ -157,9 +157,10 @@ export function dexArt(id: string, owned: boolean, surface: string): Art | null 
 }
 
 export function panelLines(s: Save, t: LocalTime, now: number): string[] {
-  // A timed special date: the egg is paused; show the countdown (or how it ended) instead of its stats
+  // A timed special date: the egg is paused; show the countdown (or how it ended) instead of its stats.
+  // The countdown line has no emoji: it changes every second (see bandSegments)
   const timed = timedBand(s, t, now)
-  if (timed) return [`${s.egg.name} #${s.egg.no}  ${timed.look.face}`, ...(timed.timer !== null ? [timed.timer] : []), timed.look.text]
+  if (timed) return [`${s.egg.name} #${s.egg.no}  ${timed.look.face}`, ...(timed.timer !== null ? [timed.timer.digits] : []), timed.look.text]
   // Another special date's face and line, as on the band
   const look = dateLook(s, t)
   const hint = look ? look.text : hintOf(s, now)

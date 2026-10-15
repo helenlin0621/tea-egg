@@ -303,8 +303,9 @@ export function endCross(prev: Save, t: LocalTime): Step {
 
 // ---- what the band and the pane show ----
 
-// The timed date's band, instead of the egg's: counting down, or how it ended (until the day is over)
-export type TimedBand = { look: BandLook; timer: string | null; warn: boolean }
+// The timed date's band, instead of the egg's: counting down, or how it ended (until the day is over).
+// The timer's icon and its digits are separate: what redraws every second stays emoji-free (view.ts)
+export type TimedBand = { look: BandLook; timer: { icon: string; digits: string } | null; warn: boolean }
 
 export function timedBand(s: Save, t: LocalTime, now: number): TimedBand | null {
   const day = timedNow(s, t)
@@ -317,7 +318,7 @@ export function timedBand(s: Save, t: LocalTime, now: number): TimedBand | null 
     const secs = Math.ceil(left / 1000)
     return {
       look: { icon: b.icon, face: warn ? b.warnFace : b.face, text: warn ? b.warnAsk : b.ask },
-      timer: `${b.timer} ${Math.floor(secs / 60)}:${pad(secs % 60)}`,
+      timer: { icon: b.timer, digits: `${Math.floor(secs / 60)}:${pad(secs % 60)}` },
       warn,
     }
   }
