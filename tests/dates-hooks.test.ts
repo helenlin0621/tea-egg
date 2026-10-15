@@ -37,7 +37,7 @@ test('Timed date: the first prompt starts it; the band shows a button with a hot
   const button = await band.find({ type: 'Button', key: 'date-action' })
   expect(button).toBeDefined()
   expect((button as { props?: { hotkey?: string } }).props?.hotkey).toBe(d.hotkey)
-  expect(await band.find({ type: 'Text', text: new RegExp(d.band.timer) })).toBeDefined()
+  expect(await band.find({ type: 'Text', text: /^\d:\d\d$/ })).toBeDefined()
   await band.press({ key: 'date-action' })
   expect(toasts.some(x => x.startsWith(d.lines.won))).toBe(true)
   expect(await band.find({ type: 'Button', key: 'date-action' })).toBeUndefined()

@@ -54,7 +54,7 @@ test('Timed date: opening that day does not start it; the first prompt starts th
   const started = onPrompt(opened.save, now, t, false)
   expect(texts(started)).toEqual([TIMED.lines.start.desktop])
   const band = timedBand(started.save, t, now + SEC)
-  expect(band?.timer).toBe(`${TIMED.band.timer} ${Math.floor((TIMED.seconds - 1) / 60)}:${pad((TIMED.seconds - 1) % 60)}`)
+  expect(band?.timer).toEqual({ icon: TIMED.band.timer, digits: `${Math.floor((TIMED.seconds - 1) / 60)}:${pad((TIMED.seconds - 1) % 60)}` })
   // Turns that day leave the egg as it was
   const turned = onTurn(started.save, now + 10 * SEC, t, first)
   expect(turned.save.egg).toEqual(started.save.egg)
@@ -174,9 +174,12 @@ test('Timed date: the band keeps the timer and drops the name first when narrow'
   const { t, now } = day(TIMED, 2026)
   const s = onPrompt(oldSave(), now, t, false).save
   const segs = bandSegments(s, t, now + SEC)
-  const timer = segs.find(x => x.text.startsWith(TIMED.band.timer))!.text
-  const narrow = fitSegments(segs, strWidth(segs[0]!.text) + strWidth(T().separator) + strWidth(timer))
-  expect(narrow.map(x => x.text)).toEqual([segs[0]!.text, T().separator, timer])
+  // No emoji on the band while it redraws every second (a terminal drawing them one column wide misplaces what follows)
+  for (const x of segs) expect(/\p{Extended_Pictographic}/u.test(x.text)).toBe(false)
+  expect(/\p{Extended_Pictographic}/u.test(TIMED.button)).toBe(false)
+  const digits = segs.find(x => /^\d:\d\d$/.test(x.text))!.text
+  const narrow = fitSegments(segs, [segs[0]!.text, T().separator, digits].reduce((w, x) => w + strWidth(x), 0))
+  expect(narrow.map(x => x.text)).toEqual([segs[0]!.text, T().separator, digits])
   // The pane shows the costume while counting down, with the nervous face near the end
   expect(dateArt(s, t, now + SEC)).toEqual({ base: TIMED.art.base, face: TIMED.art.face, steam: false })
   expect(dateArt(s, t, now + (TIMED.seconds - 5) * SEC)?.face).toBe(TIMED.art.warnFace)
