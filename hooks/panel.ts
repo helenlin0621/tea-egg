@@ -2,7 +2,7 @@ import type { Save } from '../types'
 import type { LocalTime } from './clock'
 import { compose, rasterCells, svgSource, SIZE, type Layer } from './pixels'
 import { decodeSpoilers } from './spoilers'
-import { ICON_PALETTE, PALETTE, SPRITES } from './sprites'
+import { ICON_OWN_PALETTES, ICON_PALETTE, PALETTE, SPRITES } from './sprites'
 import { T } from './text'
 import { FACE_TEXT, bar, faceOf, hintOf, stageOf, strWidth, type Face } from './view'
 
@@ -119,13 +119,14 @@ export function previewArt(key: string, surface: string, columns: number): Art |
   return layers.length ? artOf(compose(layers), surface) : null
 }
 
-// Dex sprites (art sets C/D/E) use their own ICON_PALETTE; return null when one is missing and the dex shows text only.
+// Dex sprites (art sets C/D/E and later) use their own ICON_PALETTE (or their entry in ICON_OWN_PALETTES); return null when one is missing and the dex shows text only.
 // Always the pixel SVG on desktop: 9 HD icons made the pane too big and desktop drew nothing at all
 export function dexArt(id: string, owned: boolean, surface: string): Art | null {
   // An egg whose picture isn't drawn yet keeps the locked picture; its caption still shows the name once owned
   const pixels = owned ? decodeSpoilers().sprites[id] ?? SPRITES.locked : SPRITES.locked
   if (!pixels) return null
-  return artOf(pixels, surface, ICON_PALETTE)
+  const own = owned && pixels !== SPRITES.locked ? ICON_OWN_PALETTES[id] : undefined
+  return artOf(pixels, surface, own ?? ICON_PALETTE)
 }
 
 export function panelLines(s: Save, t: LocalTime, now: number): string[] {
