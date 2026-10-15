@@ -174,10 +174,13 @@ test('Timed date: the band keeps the timer and drops the name first when narrow'
   const { t, now } = day(TIMED, 2026)
   const s = onPrompt(oldSave(), now, t, false).save
   const segs = bandSegments(s, t, now + SEC)
-  // No emoji on the band while it redraws every second (a terminal drawing them one column wide misplaces what follows)
-  for (const x of segs) expect(/\p{Extended_Pictographic}/u.test(x.text)).toBe(false)
+  // No emoji left of the digits while it redraws every second (a terminal drawing them one column wide misplaces what
+  // follows); the timer's emoji comes right after the digits
+  const at = segs.findIndex(x => /^\d:\d\d$/.test(x.text))
+  for (const x of segs.slice(0, at + 1)) expect(/\p{Extended_Pictographic}/u.test(x.text)).toBe(false)
+  expect(segs[at + 1]!.text).toBe(` ${TIMED.band.timer}`)
   expect(/\p{Extended_Pictographic}/u.test(TIMED.button)).toBe(false)
-  const digits = segs.find(x => /^\d:\d\d$/.test(x.text))!.text
+  const digits = segs[at]!.text
   const narrow = fitSegments(segs, [segs[0]!.text, T().separator, digits].reduce((w, x) => w + strWidth(x), 0))
   expect(narrow.map(x => x.text)).toEqual([segs[0]!.text, T().separator, digits])
   // The pane shows the costume while counting down, with the nervous face near the end

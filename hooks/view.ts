@@ -98,10 +98,11 @@ export function bandSegments(s: Save, t: LocalTime, now: number): Seg[] {
   // A timed special date: its own band while counting down and once settled (dates.ts); the name goes before the timer
   const timed = timedBand(s, t, now)
   if (timed) {
-    // No emoji on this band: it redraws every second, and a terminal that draws emoji one column wide (the desktop
-    // app's terminal pane) put every changing cell right of an emoji a column off, leaving stray characters
+    // No emoji left of the digits: the band redraws every second, and a terminal that draws emoji one column wide (the
+    // desktop app's terminal pane) put every changing cell right of an emoji a column off, leaving stray characters.
+    // The timer's emoji sits right after the digits (always m:ss, so it never moves)
     const segs: Seg[] = [{ text: ` ${timed.look.face}` }, { text: `  ${s.egg.name} #${s.egg.no}`, keep: 1 }]
-    if (timed.timer !== null) segs.push(sep(), { text: timed.timer.digits, keep: 2 })
+    if (timed.timer !== null) segs.push(sep(), { text: timed.timer.digits, keep: 2 }, { text: ` ${timed.timer.icon}`, keep: 2 })
     segs.push(sep(), { text: timed.look.text, dim: true })
     return segs
   }
