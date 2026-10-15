@@ -8,7 +8,7 @@ import { compareLines, offerFor, type SyncOffer } from './sync'
 import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, previewArt, SVG_PX, type Art } from './panel'
 import { dexCaption, dexHeader } from './rules'
 import { decodeSpoilers } from './spoilers'
-import { mutate, type StoreIo } from './store'
+import { loadSave, mutate, type StoreIo } from './store'
 import { parseUse, usePrompt, useStale, useTurn, type SessionUse, type UseStep, type Wait } from './usage'
 import type { Step } from './engine'
 import type { Save } from '../types'
@@ -220,9 +220,34 @@ let beat: Timer | null = null
 let alarms: Timer[] = []
 let armedFor: string | null = null
 
+// Each session keeps its own copy of the save (SAVE_REF), refreshed only by its own events. On a timed day an ask
+// started or answered in another session must show here too, so re-read the shared save every few seconds and pick
+// it up when it changed (read only: the store is written by events, never by this timer)
+const FOLLOW_MS = 5_000
+let follow: Timer | null = null
+
+function followDay($: EngineInterface, on: boolean): void {
+  if (!on) {
+    follow?.cancel()
+    follow = null
+    return
+  }
+  if (follow) return
+  follow = $.clock.every(FOLLOW_MS, () => {
+    void (async () => {
+      const shared = await loadSave(ioOf($))
+      const mine = (await $.state.get(SAVE_REF)).value
+      if (JSON.stringify(shared) === JSON.stringify(mine)) return
+      await $.state.set(SAVE_REF, shared)
+      await armCountdown($, shared)
+    })().catch(() => undefined)
+  })
+}
+
 async function armCountdown($: EngineInterface, save: Save): Promise<void> {
   const now = await $.clock.now()
   const day = timedNow(save, localNow(now))
+  followDay($, day !== null)
   const run = day?.entry?.phase === 'run' ? day : null
   const id = run ? `${run.key}@${run.entry!.startedAt}/${run.entry!.warned === true}` : null
   if (id === armedFor) return
@@ -332,7 +357,9 @@ async function activate($: EngineInterface): Promise<void> {
     await pruneUse($, now).catch(() => undefined)
     tick?.cancel()
     tick = $.clock.every(TICK_MS, () => {
-      void mutate(ioOf($), (s, at) => onTick(s, at, localNow(at), rng)).catch(() => undefined)
+      void mutate(ioOf($), (s, at) => onTick(s, at, localNow(at), rng))
+        .then(step => armCountdown($, step.save))
+        .catch(() => undefined)
     })
   } catch {
     // An egg error must never affect the user

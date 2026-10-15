@@ -12,9 +12,19 @@ const got = (d: TimedDate, n: number) => fill(d.lines.got, { n: String(n), need:
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 5, bodyColumns: 120, scroll: { offset: 0, bodyRows: 4 }, view: {} } as const
 const PANE = { title: '茶葉蛋養成計畫', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } as const
 
-function wire(on: Parameters<Parameters<typeof test>[1]>[1], fakeDate: string, surfaces: string[], toasts: string[]): void {
-  mock.store(on)
-  mock.clock(on, { now: Date.UTC(2026, 9, 1, 2) })
+type On = Parameters<Parameters<typeof test>[1]>[1]
+
+// shared: the store as every session sees it (another session's writes go straight in)
+function wire(on: On, fakeDate: string, surfaces: string[], toasts: string[], shared?: Record<string, unknown>) {
+  if (shared) {
+    on('store.get', (_, e) => ({ value: shared[(e as { key: string }).key] }) as never)
+    on('store.set', (_, e) => {
+      const { key, value } = e as { key: string; value: unknown }
+      shared[key] = value
+      return { value: undefined } as never
+    })
+  } else mock.store(on)
+  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 1, 2) })
   mock.env(on, { ...ZH, TEA_EGG_FAKE_DATE: fakeDate })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
@@ -25,6 +35,7 @@ function wire(on: Parameters<Parameters<typeof test>[1]>[1], fakeDate: string, s
   on('session.id', () => ({ value: 'session-1' }) as never)
   on('session.surfaces', () => ({ value: surfaces }) as never)
   on('prompt.submit', (_, e) => ({ text: e.text }) as never)
+  return clock
 }
 
 test('Timed date: the first prompt starts an ask; the band shows a button with a hotkey that answers it', async ($, on) => {
@@ -60,6 +71,27 @@ test('Timed date: on the pane, Refill becomes the day button', async ($, on) => 
   await pane.press({ key: 'refill' })
   expect(toasts).toContain(got(d, 1))
   await pane.unmount()
+})
+
+test('Timed date: an ask started in another session shows up here within seconds, and its timer moves', async ($, on) => {
+  const d = spec('timed')
+  const shared: Record<string, unknown> = {}
+  const clock = wire(on, `2026-${pad(d.month)}-${pad(d.day)}T10:00`, ['terminal'], [], shared)
+  await $.session.start({ cwd: '.', surface: 'terminal', isInteractive: true })
+  const band = await $.ui.mount({ plugin: 'tea-egg', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await band.find({ type: 'Text', text: /^\d:\d\d$/ })).toBeUndefined()
+  // The other session's first prompt of the day: its ask lands in the shared save
+  const key = Object.keys(shared).find(k => k.endsWith('-fake'))!
+  const save = structuredClone(shared[key]) as { dateMode: Record<string, unknown> }
+  const id = Object.entries(decodeSpoilers().dates).find(([, x]) => x.kind === 'timed')![0]
+  save.dateMode[`${id}:2026`] = { phase: 'run', startedAt: Date.UTC(2026, 9, 1, 2), from: 'live', got: 0, asks: 1, warned: false }
+  shared[key] = save
+  // Picked up within FOLLOW_MS, then redrawn every second
+  await clock.advance(5_000)
+  expect(await band.find({ type: 'Text', text: '4:55' })).toBeDefined()
+  await clock.advance(2_000)
+  expect(await band.find({ type: 'Text', text: '4:53' })).toBeDefined()
+  await band.unmount()
 })
 
 test('Reply date: /egg <command> is hidden from help and answers like an unknown command on other days', async ($, on) => {
