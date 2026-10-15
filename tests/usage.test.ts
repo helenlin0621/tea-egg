@@ -2,7 +2,7 @@ import { test, expect } from 'claude-code/testing'
 import { decodeSpoilers } from '../hooks/spoilers'
 import { onTick, onTurn } from '../hooks/flow'
 import { newSave } from '../hooks/model'
-import { newUse, parseUse, usePrompt, useStale, useTurn, type SessionUse } from '../hooks/usage'
+import { newUse, parseUse, usePrompt, useStale, useTurn, withoutWaits, type SessionUse } from '../hooks/usage'
 import type { Save } from '../types'
 import { at } from './helpers'
 
@@ -143,4 +143,21 @@ test('Dry pot: minutes in use with no broth add up, whatever the day\'s flavor',
 test('Dry pot: nothing counts while there is broth', async () => {
   const r = run([['p', 0], ['t', 60]])
   expect(r.save.egg.record.dryMinutes ?? 0).toBe(0)
+})
+
+test('Waiting for the person is not use: minutes, broth and dry time leave it out', async () => {
+  // A prompt at 0; a permission prompt waits from 10 to 190; the turn ends at 200
+  const p = usePrompt(newSave(T0), newUse(), T0, day)
+  const t = useTurn(p.save, p.use, T0 + 200 * MIN, day, 'A', [[T0 + 10 * MIN, T0 + 190 * MIN]])
+  expect(t.save.egg.record.sessionMinutes).toBe(20)
+  expect(t.use.minutes).toBe(20)
+  expect(t.save.egg.broth).toBe(96) // 20 minutes in use: one step of 15
+})
+
+test('Waits: cut out of a stretch, clipped to it, and overlapping waits are fine', async () => {
+  expect(withoutWaits(0, 100, [])).toEqual([[0, 100]])
+  expect(withoutWaits(0, 100, [[10, 20], [50, 60]])).toEqual([[0, 10], [20, 50], [60, 100]])
+  expect(withoutWaits(0, 100, [[-50, 30], [90, 500]])).toEqual([[30, 90]])
+  expect(withoutWaits(0, 100, [[10, 40], [30, 60]])).toEqual([[0, 10], [60, 100]])
+  expect(withoutWaits(0, 100, [[0, 100]])).toEqual([])
 })

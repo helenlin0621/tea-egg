@@ -255,3 +255,31 @@ test('Usage: each session keeps its own record; old records are dropped when the
   expect(value.egg.record.sessionCount).toBe(1)
   expect(value.egg.record.sessionMinutes).toBe(12)
 })
+
+test('Usage: a permission prompt the person leaves open is not counted as use', OPTS, async ($, on) => {
+  const now = Date.UTC(2026, 9, 7, 2)
+  const store = new Map<string, unknown>()
+  on('store.get', (_, e) => ({ value: store.get(e.key) }) as never)
+  on('store.set', (_, e) => (store.set(e.key, JSON.parse(JSON.stringify(e.value))), { value: undefined }) as never)
+  on('store.delete', (_, e) => (store.delete(e.key), { value: undefined }) as never)
+  on('store.keys', () => ({ value: [...store.keys()] }) as never)
+  const clock = mock.clock(on, { now })
+  mock.env(on, ZH)
+  base(on)
+  answerPrompts(on)
+  on('classic.PermissionRequest', () => ({}) as never)
+  // The tool asks for permission, and the person answers two hours later
+  on('tool.call', { tool: 'Bash' }, async () => {
+    await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'ls' } } as never)
+    await clock.advance(120 * 60_000)
+    return BASH_OK
+  })
+  await $.session.start(START)
+  await $.prompt.submit({ text: 'hi' })
+  await clock.advance(5 * 60_000)
+  await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+  await clock.advance(5 * 60_000)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  const use = store.get(`${STORE_KEY}/session/session-1`) as { minutes: number }
+  expect(use.minutes).toBe(10)
+})

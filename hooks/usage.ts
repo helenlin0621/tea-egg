@@ -55,6 +55,24 @@ function lastActive(use: SessionUse): number | null {
 
 export type UseStep = { save: Save; use: SessionUse; effects: Effect[] }
 
+// Stretches spent waiting for the person (a permission prompt, a question to answer) are not use
+export type Wait = [from: number, to: number]
+
+// [from, to] with the waits taken out, as the pieces that remain
+export function withoutWaits(from: number, to: number, waits: readonly Wait[]): Wait[] {
+  let pieces: Wait[] = [[from, to]]
+  for (const [a, b] of waits) {
+    pieces = pieces.flatMap(([x, y]): Wait[] => {
+      if (b <= x || a >= y) return [[x, y]]
+      const out: Wait[] = []
+      if (a > x) out.push([x, a])
+      if (b < y) out.push([b, y])
+      return out
+    })
+  }
+  return pieces
+}
+
 // prompt.submit: start a new segment after a long break, and count this session toward the egg in the pot once
 export function usePrompt(prev: Save, prevUse: SessionUse, now: number, t: LocalTime, _tag = ''): UseStep {
   if (isSpecialDay(t)) return { save: prev, use: prevUse, effects: [] }
@@ -71,8 +89,9 @@ export function usePrompt(prev: Save, prevUse: SessionUse, now: number, t: Local
 }
 
 // turn.complete: add the minutes since the segment was last active to the egg in the pot, use up broth for them,
-// and note them for this session (tag) so overlaps with other sessions can be found (multi.ts)
-export function useTurn(prev: Save, prevUse: SessionUse, now: number, t: LocalTime, tag = ''): UseStep {
+// and note them for this session (tag) so overlaps with other sessions can be found (multi.ts). Time spent waiting
+// for the person during the turn (waits) is left out of all three
+export function useTurn(prev: Save, prevUse: SessionUse, now: number, t: LocalTime, tag = '', waits: readonly Wait[] = []): UseStep {
   if (isSpecialDay(t)) return { save: prev, use: prevUse, effects: [] }
   const save = structuredClone(prev)
   const use = { ...prevUse }
@@ -84,11 +103,13 @@ export function useTurn(prev: Save, prevUse: SessionUse, now: number, t: LocalTi
   if (last === null || (!prompted && now - last >= SEGMENT_GAP_MS)) {
     use.segmentStart = now
   } else {
-    const minutes = Math.max(0, now - last) / MIN
-    save.egg.record.sessionMinutes += minutes
-    use.minutes += minutes
-    useBroth(save, last, now, effects)
-    noteUse(save, tag, last, now, t)
+    for (const [a, b] of withoutWaits(last, now, waits)) {
+      const minutes = (b - a) / MIN
+      save.egg.record.sessionMinutes += minutes
+      use.minutes += minutes
+      useBroth(save, a, b, effects)
+      noteUse(save, tag, a, b, t)
+    }
   }
   use.lastTurnEnd = now
   return { save, use, effects }

@@ -9,6 +9,7 @@
   "scripts": {
     "backup": "node --disable-warning=ExperimentalWarning scripts/backup-private.ts",
     "check": "node --disable-warning=ExperimentalWarning scripts/check-repo.ts",
+    "profile": "node --disable-warning=ExperimentalWarning scripts/usage-profile.ts",
     "encode": "node --disable-warning=ExperimentalWarning scripts/encode-spoilers.ts",
     "sprites": "node --disable-warning=ExperimentalWarning scripts/build-sprites.ts",
     "test-sheet": "node --disable-warning=ExperimentalWarning scripts/make-test-sheet.ts",

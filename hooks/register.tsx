@@ -8,7 +8,7 @@ import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, 
 import { dexCaption, dexHeader } from './rules'
 import { decodeSpoilers } from './spoilers'
 import { mutate, type StoreIo } from './store'
-import { parseUse, usePrompt, useStale, useTurn, type SessionUse, type UseStep } from './usage'
+import { parseUse, usePrompt, useStale, useTurn, type SessionUse, type UseStep, type Wait } from './usage'
 import type { Step } from './engine'
 import type { Save } from '../types'
 import { detectLang, setLang } from './i18n'
@@ -59,6 +59,13 @@ const ioOf = ($: EngineInterface): StoreIo => ({
     $.ui.toast(text)
   },
 })
+
+// Time spent waiting for the person within the current turn (usage.ts leaves it out). A permission prompt counts
+// from when it is shown until its tool call ends (a command run after approval rides along, usually seconds);
+// these tools wait for an answer the whole time they run
+const WAIT_TOOLS = ['AskUserQuestion', 'ExitPlanMode'] as const
+let askedAt: number | null = null
+let waits: Wait[] = []
 
 // Each session's usage record (usage.ts) sits under its own key, so sessions never overwrite each other's
 const usePrefix = () => `${storeKey()}/session/`
@@ -316,11 +323,23 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // A permission prompt is about to be shown: the wait runs until that tool call ends
+  on('classic.PermissionRequest', async ($, e, next) => {
+    try {
+      if (interactive) askedAt = await $.clock.now()
+    } catch {
+      // Ignore silently
+    }
+    return next(e)
+  })
+
   on('turn.complete', async ($, e, next) => {
     const ran = await next(e)
     try {
       if (interactive && e.agentId === undefined && e.reason !== 'error') {
-        await withUse($, useTurn, (s, at) => onTurn(s, at, localNow(at), rng))
+        const turnWaits = waits
+        waits = []
+        await withUse($, (s, use, at, t, tag) => useTurn(s, use, at, t, tag, turnWaits), (s, at) => onTurn(s, at, localNow(at), rng))
       }
     } catch {
       // Ignore silently
@@ -330,10 +349,22 @@ export const register: Register = on => {
 
   // Observe only: always call next(e) and return its result unchanged
   on('tool.call', async ($, e, next) => {
+    let started: number | null = null
+    try {
+      if (interactive) started = await $.clock.now()
+    } catch {
+      // Ignore silently
+    }
     const ran = await next(e)
     try {
       if (!interactive) return ran
       const tool = String(e.tool)
+      // Waiting for the person: a tool that asks them, or a permission prompt raised during this call
+      const ended = await $.clock.now()
+      const asked = askedAt !== null && started !== null && askedAt >= started ? askedAt : null
+      if (asked !== null) askedAt = null
+      const from = (WAIT_TOOLS as readonly string[]).includes(tool) ? started : asked
+      if (from !== null && ended > from) waits.push([from, ended])
       const command = (OBSERVED_TOOLS as readonly string[]).includes(tool) ? commandOf(e) : ''
       const obs = observe(tool, command, ran)
       if (obs !== null) await mutate(ioOf($), (s, at) => onObserved(s, at, localNow(at), obs, rng))
