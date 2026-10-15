@@ -44,6 +44,27 @@ export type DateModeYear = {
   lastToast: Record<string, number>
 }
 
+// A 'timed' special date (dates.ts), one per year. idle: the day came, no prompt yet; run: counting down from startedAt;
+// won / lost: settled. from: 'missed' when settled for someone who never played that day
+export type TimedEntry = {
+  phase: 'idle' | 'run' | 'won' | 'lost'
+  startedAt?: number
+  terminal?: boolean // a terminal was attached when it started: its toasts mention the fallback command
+  warned?: boolean
+  from?: 'live' | 'missed'
+  closed?: boolean // the "it's over" toast was shown (or not needed)
+  lastDanger?: number
+}
+
+// A 'grant' special date: the egg was handed over on `date` (local), on the day or made up later
+export type GrantEntry = { got: true; date: DateKey; from: 'live' | 'missed' }
+
+// A 'reply' special date. open: the day, not answered yet; done: answered on the day; late: missed, cross for lateDate;
+// eased: answered while cross; over: the cross day ended
+export type ReplyEntry = { phase: 'open' | 'done' | 'late' | 'eased' | 'over'; lateDate?: DateKey; lastLine?: number }
+
+export type DateEntry = DateModeYear | TimedEntry | GrantEntry | ReplyEntry
+
 export type Save = {
   version: 1
   egg: Egg
@@ -52,8 +73,10 @@ export type Save = {
   clocks: Clocks
   nightToastFor: DateKey | null
   harvestedAt: number | null
-  dateMode: Record<string, DateModeYear>
+  // Special dates by "<id>:<year>" (d1 is the first special date; older saves keyed it by the year alone, see model.ts)
+  dateMode: Record<string, DateEntry>
   welcomed: boolean
+  installedOn?: DateKey // local date this save was made; older saves get the day they first ran this version
 }
 
 declare module 'claude-code' {

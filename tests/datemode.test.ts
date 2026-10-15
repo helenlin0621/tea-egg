@@ -3,6 +3,7 @@ import { decodeSpoilers } from '../hooks/spoilers'
 import { isSpecialDay, specialEvent, specialMakeup, specialSeen, specialTurn } from '../hooks/datemode'
 import { newSave } from '../hooks/model'
 import type { LocalTime } from '../hooks/clock'
+import type { DateModeYear } from '../types'
 
 const dm = () => decodeSpoilers().dateMode
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -24,8 +25,8 @@ test('Special-date mode: a turn raises the display progress; the real egg is unc
   const s = newSave(T)
   const r = specialTurn(s, T, day(0, 10), first)
   expect(r.save.egg).toEqual(s.egg)
-  expect(r.save.dateMode['2027']!.human).toBe(dm().humanStep)
-  expect(r.save.dateMode['2027']!.seen).toBe(true)
+  expect((r.save.dateMode['d1:2027'] as DateModeYear).human).toBe(dm().humanStep)
+  expect((r.save.dateMode['d1:2027'] as DateModeYear).seen).toBe(true)
 })
 
 test('Special-date mode: at most one message of each kind per 10 minutes', async () => {

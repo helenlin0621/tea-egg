@@ -108,9 +108,9 @@ test('Desktop draws the egg as a pixel SVG well under the 131072-char limit', as
   if (art.kind === 'svg') expect(art.source.length).toBeLessThan(40000)
 })
 
-// Desktop drops the whole pane when the tree is too big (the dex with 9 HD icons came to ~450 KB):
-// the dex row draws pixel SVGs, and all 9 together stay within about one HD egg's size
-test('Desktop dex icons are pixel SVGs and the whole row stays under 64000 chars', async () => {
+// Desktop drops the whole pane when the tree is too big (the dex with 9 HD icons came to ~450 KB; ~95 KB was fine):
+// the dex row draws pixel SVGs. 15 icons, the newer ones each with its own palette, come to about 64 KB
+test('Desktop dex icons are pixel SVGs and the whole row stays under 72000 chars', async () => {
   const slots = decodeSpoilers().dexSlots
   for (const owned of [true, false]) {
     let total = 0
@@ -119,7 +119,7 @@ test('Desktop dex icons are pixel SVGs and the whole row stays under 64000 chars
       expect(a?.kind === 'svg' && !a.source.includes('<image')).toBe(true)
       if (a?.kind === 'svg') total += a.source.length
     }
-    expect(total).toBeLessThan(64000)
+    expect(total).toBeLessThan(72000)
   }
 })
 

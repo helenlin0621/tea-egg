@@ -1,6 +1,6 @@
 import type { Save } from '../types'
 import type { LocalTime } from './clock'
-import { isSpecialDay } from './datemode'
+import { isPausedDay } from './datemode'
 import { SPAN_KEEP_MS, uncovered } from './engine'
 import { decodeSpoilers } from './spoilers'
 
@@ -25,7 +25,7 @@ function dayMinutes(): number {
 export function noteUse(s: Save, tag: string, from: number, to: number, t: LocalTime): void {
   if (to <= from) return
   const spans = (s.clocks.spans ?? []).filter(x => x.b >= to - SPAN_KEEP_MS)
-  if (!isSpecialDay(t)) {
+  if (!isPausedDay(t)) {
     let counted = s.clocks.multiSpans ?? []
     let ms = 0
     for (const x of spans) {

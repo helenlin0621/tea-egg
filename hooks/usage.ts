@@ -1,6 +1,6 @@
 import type { Save } from '../types'
 import type { LocalTime } from './clock'
-import { isSpecialDay } from './datemode'
+import { isPausedDay } from './datemode'
 import { useBroth, type Effect } from './engine'
 import { noteUse } from './multi'
 
@@ -75,7 +75,7 @@ export function withoutWaits(from: number, to: number, waits: readonly Wait[]): 
 
 // prompt.submit: start a new segment after a long break, and count this session toward the egg in the pot once
 export function usePrompt(prev: Save, prevUse: SessionUse, now: number, t: LocalTime, _tag = ''): UseStep {
-  if (isSpecialDay(t)) return { save: prev, use: prevUse, effects: [] }
+  if (isPausedDay(t)) return { save: prev, use: prevUse, effects: [] }
   const save = structuredClone(prev)
   const use = { ...prevUse }
   const last = lastActive(use)
@@ -92,7 +92,7 @@ export function usePrompt(prev: Save, prevUse: SessionUse, now: number, t: Local
 // and note them for this session (tag) so overlaps with other sessions can be found (multi.ts). Time spent waiting
 // for the person during the turn (waits) is left out of all three
 export function useTurn(prev: Save, prevUse: SessionUse, now: number, t: LocalTime, tag = '', waits: readonly Wait[] = []): UseStep {
-  if (isSpecialDay(t)) return { save: prev, use: prevUse, effects: [] }
+  if (isPausedDay(t)) return { save: prev, use: prevUse, effects: [] }
   const save = structuredClone(prev)
   const use = { ...prevUse }
   const effects: Effect[] = []

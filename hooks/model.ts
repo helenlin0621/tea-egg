@@ -76,8 +76,21 @@ function salvageDex(raw: unknown): Record<string, number> {
   return dex
 }
 
+// Older saves keyed the first special date by the year alone ("2027"); it is "d1:2027" now, beside the other dates.
+// Still version 1: an older copy of the mod reading this save skips keys it doesn't know instead of resetting the egg
+function migrate(s: Save): Save {
+  const old = Object.keys(s.dateMode).filter(k => /^\d{4}$/.test(k))
+  if (old.length === 0) return s
+  const dateMode = { ...s.dateMode }
+  for (const k of old) {
+    dateMode[`d1:${k}`] ??= dateMode[k]!
+    delete dateMode[k]
+  }
+  return { ...s, dateMode }
+}
+
 export function parseSave(raw: unknown, now: number): Save {
-  if (isSave(raw)) return raw
+  if (isSave(raw)) return migrate(raw)
   const dex = salvageDex(raw)
   return { ...newSave(now), dex, welcomed: Object.keys(dex).length > 0 }
 }
