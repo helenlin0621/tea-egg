@@ -1,7 +1,8 @@
 // The special dates after the first (datemode.ts). What each kind does is here; which day, what it gives and every
 // line are spoiler data (decodeSpoilers().dates).
-//  - timed: the egg is paused; the day's first prompt starts a countdown; pressing the button in time gives one prize,
-//    running out gives the other
+//  - timed: the egg is paused all day. The first prompt, then the first prompt after each rest, starts an ask: pressing
+//    the button in time counts one. Enough of them by the end of the day give one prize, fewer the other (settled on
+//    the first open after)
 //  - grant: the day's first prompt hands over a prize; the egg goes on as usual
 //  - reply: for someone who got `needs` that year; press the button on the day for the prize. Miss it and the egg is
 //    cross on the first day opened after (faces and lines only; the egg goes on as usual)
@@ -11,7 +12,7 @@ import type { LocalTime } from './clock'
 import type { Effect, Step } from './engine'
 import type { BandLook, DateSpec, GrantDate, ReplyDate, TimedDate } from './spoiler-types'
 import { decodeSpoilers } from './spoilers'
-import { T, pick } from './text'
+import { T, fill, pick } from './text'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const dayOf = (year: number, d: { month: number; day: number }): DateKey => `${year}-${pad(d.month)}-${pad(d.day)}`
@@ -69,15 +70,42 @@ export function remainingMs(spec: TimedDate, entry: TimedEntry, now: number): nu
   return Math.max(0, spec.seconds * 1000 - (now - (entry.startedAt ?? now)))
 }
 
-// Settle a countdown that ran out, or warn once it is nearly over. Runs on every event (and on the countdown's timers)
+// TEA_EGG_TEST_REST (seconds): a short rest between asks, to try the day out without waiting
+let restOverride: number | null = null
+export function setRestOverride(ms: number | null): void {
+  restOverride = ms
+}
+
+// The rest after an ask that ended at `at`, drawn in restMs. Seeded by `at` (mulberry32), so the timers that end an
+// ask need no rng and the same ask always draws the same rest
+function restAfter(spec: TimedDate, at: number): number {
+  if (restOverride !== null) return restOverride
+  let x = ((at % 4294967296) + 0x6d2b79f5) >>> 0
+  x = Math.imul(x ^ (x >>> 15), x | 1)
+  x ^= x + Math.imul(x ^ (x >>> 7), x | 61)
+  const unit = ((x ^ (x >>> 14)) >>> 0) / 4294967296
+  const [min, max] = spec.restMs
+  return min + Math.floor(unit * (max - min))
+}
+
+const tally = (spec: TimedDate, line: string, n: number) => fill(line, { n: String(n), need: String(spec.need) })
+
+// An ask is over (answered or not): rest until nextAt
+function endAsk(spec: TimedDate, entry: TimedEntry, at: number, answered: boolean): void {
+  if (answered) entry.got = (entry.got ?? 0) + 1
+  entry.phase = 'rest'
+  entry.nextAt = at + restAfter(spec, at)
+}
+
+// End an ask that ran out, or warn once it is nearly over. Runs on every event (and on the ask's timers)
 function checkTimed(step: Step, now: number): void {
   const run = running(step.save)
   if (!run || !run.entry) return
   const { spec, entry } = run
   const left = remainingMs(spec, entry, now)
   if (left <= 0) {
-    entry.phase = 'lost'
-    step.effects.push(toast(award(step.save, spec.prizes.lost, spec.lines.lost)))
+    endAsk(spec, entry, (entry.startedAt ?? now) + spec.seconds * 1000, false)
+    step.effects.push(toast(tally(spec, spec.lines.miss, entry.got ?? 0)))
   } else if (left <= spec.warnSeconds * 1000 && !entry.warned) {
     entry.warned = true
     step.effects.push(toast(surfaced(spec.lines.warn, entry.terminal === true)))
@@ -110,7 +138,8 @@ export function timedDanger(prev: Save, now: number, t: LocalTime): Step {
   return step
 }
 
-// The button (or /egg refill): in time it wins; otherwise a line for each case. null when no timed date is showing
+// The button (or /egg refill): during an ask it counts one; otherwise a line for each case. null when no timed date
+// is showing
 export function timedPress(prev: Save, now: number, t: LocalTime): Step | null {
   const step = begin(prev)
   checkTimed(step, now)
@@ -118,9 +147,10 @@ export function timedPress(prev: Save, now: number, t: LocalTime): Step | null {
   if (!day) return null
   const { spec, entry } = day
   if (entry?.phase === 'run') {
-    entry.phase = 'won'
-    step.reply = award(step.save, spec.prizes.won, spec.lines.won)
-  } else if (entry?.phase === 'won') step.reply = spec.replies.afterWon
+    endAsk(spec, entry, now, true)
+    step.reply = tally(spec, spec.lines.got, entry.got ?? 0)
+  } else if (entry?.phase === 'rest') step.reply = spec.replies.resting
+  else if (entry?.phase === 'won') step.reply = spec.replies.afterWon
   else if (entry?.phase === 'lost') step.reply = spec.replies.afterLost
   else step.reply = spec.replies.early
   return step
@@ -132,15 +162,20 @@ export function timedFlipReply(s: Save, t: LocalTime): string | null {
 
 // ---- the day's first prompt ----
 
-// Starts today's countdown, hands over today's grant, opens today's reply. terminal: a terminal is attached
+// Starts today's first ask (or the next, once the rest is over), hands over today's grant, opens today's reply.
+// terminal: a terminal is attached
 export function datesPrompt(prev: Save, now: number, t: LocalTime, terminal: boolean): Step {
   const step = begin(prev)
   const s = step.save
   for (const [id, spec] of all('timed')) {
     const key = keyOf(id, t.year)
     const entry = s.dateMode[key] as TimedEntry | undefined
-    if (!isOn(spec, t) || (entry && entry.phase !== 'idle')) continue
-    s.dateMode[key] = { phase: 'run', startedAt: now, terminal, from: 'live' }
+    if (!isOn(spec, t)) continue
+    if (!entry || entry.phase === 'idle') {
+      s.dateMode[key] = { phase: 'run', startedAt: now, terminal, from: 'live', got: 0, asks: 1, warned: false }
+    } else if (entry.phase === 'rest' && now >= (entry.nextAt ?? 0)) {
+      Object.assign(entry, { phase: 'run', startedAt: now, terminal, warned: false, asks: (entry.asks ?? 0) + 1 })
+    } else continue
     step.effects.push(toast(surfaced(spec.lines.start, terminal)))
   }
   for (const [id, spec] of all('grant')) {
@@ -194,10 +229,16 @@ export function datesCatchUp(prev: Save, now: number, t: LocalTime): Step {
     }
   }
   for (const m of missed.sort((a, b) => a.date.localeCompare(b.date))) m.run()
-  // The first open after a timed day that was played: back to the usual egg
+  // The first open after a timed day that was played: settle it by the count (once its last ask is over), back to the
+  // usual egg. A day settled the old way (a single countdown) only says it is over
   for (const [id, spec] of all('timed')) {
     const entry = s.dateMode[keyOf(id, lastBefore(spec, t).year)] as TimedEntry | undefined
-    if (entry && entry.from === 'live' && (entry.phase === 'won' || entry.phase === 'lost') && !entry.closed) {
+    if (entry?.phase === 'rest') {
+      const n = entry.got ?? 0
+      const phase = n >= spec.need ? 'won' : 'lost'
+      Object.assign(entry, { phase, closed: true })
+      step.effects.push(toast(award(s, spec.prizes[phase], fill(spec.lines[phase], { n: String(n) }))))
+    } else if (entry && entry.from === 'live' && (entry.phase === 'won' || entry.phase === 'lost') && !entry.closed) {
       entry.closed = true
       step.effects.push(toast(spec.lines.over))
     }
@@ -303,15 +344,23 @@ export function endCross(prev: Save, t: LocalTime): Step {
 
 // ---- what the band and the pane show ----
 
-// The timed date's band, instead of the egg's: counting down, or how it ended (until the day is over).
-// The timer's icon and its digits are separate: what redraws every second stays emoji-free (view.ts)
-export type TimedBand = { look: BandLook; timer: { icon: string; digits: string } | null; warn: boolean }
+// The timed date's band, instead of the egg's: an ask counting down, a rest between asks, or how a day settled the
+// old way ended (until the day is over). The timer's icon and its digits are separate, and the count has its mark
+// only between asks: what redraws every second stays emoji-free (view.ts)
+export type TimedBand = {
+  look: BandLook
+  timer: { icon: string; digits: string } | null
+  count: string | null
+  mark: string | null
+  warn: boolean
+}
 
 export function timedBand(s: Save, t: LocalTime, now: number): TimedBand | null {
   const day = timedNow(s, t)
   if (!day?.entry) return null
   const { spec, entry } = day
   const b = spec.band
+  const count = tally(spec, b.count, entry.got ?? 0)
   if (entry.phase === 'run') {
     const left = remainingMs(spec, entry, now)
     const warn = left <= spec.warnSeconds * 1000
@@ -319,10 +368,17 @@ export function timedBand(s: Save, t: LocalTime, now: number): TimedBand | null 
     return {
       look: { icon: b.icon, face: warn ? b.warnFace : b.face, text: warn ? b.warnAsk : b.ask },
       timer: { icon: b.timer, digits: `${Math.floor(secs / 60)}:${pad(secs % 60)}` },
+      count,
+      mark: null,
       warn,
     }
   }
-  if ((entry.phase === 'won' || entry.phase === 'lost') && isOn(spec, t)) return { look: b[entry.phase], timer: null, warn: false }
+  if (entry.phase === 'rest' && isOn(spec, t)) {
+    return { look: { icon: b.icon, face: b.face, text: b.rest }, timer: null, count, mark: b.mark, warn: false }
+  }
+  if ((entry.phase === 'won' || entry.phase === 'lost') && isOn(spec, t)) {
+    return { look: b[entry.phase], timer: null, count: null, mark: null, warn: false }
+  }
   return null
 }
 
@@ -356,7 +412,7 @@ export function paneRefillLabel(s: Save, t: LocalTime): string | null {
   return timedNow(s, t)?.spec.paneButton ?? null
 }
 
-// Egg layers that replace the usual picture: the costume while counting down, the cross face, the done face.
+// Egg layers that replace the usual picture: the costume all through a timed day, the cross face, the done face.
 // prize: show that dex icon instead (how a timed day ended)
 export type DateArt = { base?: string; face?: string; steam?: boolean; palette?: string; prize?: string }
 
@@ -366,6 +422,7 @@ export function dateArt(s: Save, t: LocalTime, now: number): DateArt | null {
     const warn = remainingMs(day.spec, day.entry, now) <= day.spec.warnSeconds * 1000
     return { base: day.spec.art.base, face: warn ? day.spec.art.warnFace : day.spec.art.face, steam: false }
   }
+  if (day?.entry?.phase === 'rest' && isOn(day.spec, t)) return { base: day.spec.art.base, face: day.spec.art.face, steam: false }
   if (day?.entry && (day.entry.phase === 'won' || day.entry.phase === 'lost') && isOn(day.spec, t)) {
     return { prize: day.spec.prizes[day.entry.phase] }
   }

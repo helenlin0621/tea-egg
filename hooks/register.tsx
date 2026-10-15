@@ -1,7 +1,7 @@
 import { update, type EngineInterface, type Register, type Timer } from 'claude-code'
 import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTime } from './clock'
 import { observe, OBSERVED_TOOLS } from './detect'
-import { dateAction, paneRefillLabel, remainingMs, timedNow, timedTick } from './dates'
+import { dateAction, paneRefillLabel, remainingMs, setRestOverride, timedNow, timedTick } from './dates'
 import { dexTitle, onCommand, onObserved, onPrompt, onSessionOpen, onTick, onTurn } from './flow'
 import { BAND_STORE_KEY, FAKE_STORE_KEY, STORE_KEY, SYNC_DISMISSED_KEY } from './model'
 import { compareLines, offerFor, type SyncOffer } from './sync'
@@ -317,6 +317,9 @@ async function activate($: EngineInterface): Promise<void> {
       fake: parseFakeDate(await $.env.get('TEA_EGG_FAKE_DATE')),
       loadedAt: now,
     }
+    // A short rest between a timed day's asks, only with a fake date so the real save never gets one
+    const rest = Number(await $.env.get('TEA_EGG_TEST_REST'))
+    setRestOverride(clock.fake !== null && rest > 0 ? rest * 1000 : null)
     try {
       await findSyncOffer($, true)
     } catch {

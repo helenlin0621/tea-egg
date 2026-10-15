@@ -4,11 +4,11 @@ import { dateAction, dateArt, dateLook, timedBand, timedNow } from '../hooks/dat
 import { onCommand, onObserved, onPrompt, onSessionOpen, onTick, onTurn } from '../hooks/flow'
 import { newSave, parseSave } from '../hooks/model'
 import { fitSegments, bandSegments, strWidth } from '../hooks/view'
-import { T } from '../hooks/text'
+import { T, fill } from '../hooks/text'
 import type { LocalTime } from '../hooks/clock'
 import type { Observation } from '../hooks/detect'
 import type { GrantDate, ReplyDate, TimedDate } from '../hooks/spoiler-types'
-import type { Save } from '../types'
+import type { Save, TimedEntry } from '../types'
 
 // Every date comes from the spoiler data, so no date, line or egg name is written here
 const dates = () => decodeSpoilers().dates
@@ -71,27 +71,119 @@ test('Timed date: the toasts that mention the fallback command go to terminal se
   expect(texts(onTick(warn.save, now + (TIMED.seconds - 10) * SEC, t, first))).toEqual([])
 })
 
-test('Timed date: pressing in time wins its prize once; /egg refill is the same as the button', async () => {
+// The day's count so far, the way the toasts and the band count them
+const count = (line: string, n: number) => fill(line, { n: String(n), need: String(TIMED.need) })
+const entryOf = (s: Save, year = 2026) => s.dateMode[`${TIMED_ID}:${year}`] as TimedEntry
+
+// Answer `n` asks in time and miss `misses` more, from the day's first prompt; each ask comes right after its rest
+function play(n: number, misses = 0, year = 2026): { save: Save; at: number } {
+  const { t, now } = day(TIMED, year, 0, 8)
+  let s = onPrompt(oldSave(), now, t, false).save
+  let at = now
+  for (let i = 0; i < n + misses; i++) {
+    if (i > 0) {
+      at = entryOf(s, year).nextAt!
+      s = onPrompt(s, at, t, false).save
+    }
+    s = i < n ? onCommand(s, at + 10 * SEC, t, 'refill', first).save : onTick(s, at + (TIMED.seconds + 1) * SEC, t, first).save
+    expect(entryOf(s, year).phase).toBe('rest')
+  }
+  return { save: s, at }
+}
+
+test('Timed date: pressing in time counts one and the egg rests; /egg refill is the same as the button', async () => {
   const { t, now } = day(TIMED, 2026)
   const started = onPrompt(oldSave(), now, t, false)
-  const won = onCommand(started.save, now + 30 * SEC, t, 'refill', first)
-  expect(won.reply).toBe(TIMED.lines.won + T().newDex)
-  expect(won.save.dex[TIMED.prizes.won]).toBe(1)
-  expect(won.save.egg.broth).toBe(started.save.egg.broth) // not a refill
-  expect(onCommand(won.save, now + 40 * SEC, t, 'refill', first).reply).toBe(TIMED.replies.afterWon)
-  expect(dateAction(won.save, t)).toBe(null)
-  expect(timedBand(won.save, t, now + 40 * SEC)?.look.text).toBe(TIMED.band.won.text)
+  const got = onCommand(started.save, now + 30 * SEC, t, 'refill', first)
+  expect(got.reply).toBe(count(TIMED.lines.got, 1))
+  expect(got.save.dex[TIMED.prizes.won]).toBe(undefined) // the prize comes when the day is settled
+  expect(got.save.egg.broth).toBe(started.save.egg.broth) // not a refill
+  expect(dateAction(got.save, t)).toBe(null)
+  expect(onCommand(got.save, now + 40 * SEC, t, 'refill', first).reply).toBe(TIMED.replies.resting)
+  const band = timedBand(got.save, t, now + 40 * SEC)
+  expect(band?.timer).toBe(null)
+  expect(band?.look.text).toBe(TIMED.band.rest)
+  expect(band?.count).toBe(count(TIMED.band.count, 1))
 })
 
-test('Timed date: running out settles it on the next event, toasting once', async () => {
+test('Timed date: an ask that runs out is missed, toasting once; the egg rests', async () => {
   const { t, now } = day(TIMED, 2026)
   const started = onPrompt(oldSave(), now, t, false)
   const late = now + (TIMED.seconds + 1) * SEC
-  const lost = onTurn(started.save, late, t, first)
-  expect(texts(lost)).toContain(TIMED.lines.lost + T().newDex)
+  const missed = onTurn(started.save, late, t, first)
+  expect(texts(missed)).toEqual([count(TIMED.lines.miss, 0)])
+  expect(entryOf(missed.save).phase).toBe('rest')
+  expect(missed.save.dex).toEqual(started.save.dex)
+  expect(texts(onTick(missed.save, late + 60 * SEC, t, first))).toEqual([])
+})
+
+test('Timed date: the next ask waits for the rest, then comes with the first prompt after it', async () => {
+  const { t, now } = day(TIMED, 2026)
+  const pressed = now + 30 * SEC
+  const s = onCommand(onPrompt(oldSave(), now, t, false).save, pressed, t, 'refill', first).save
+  const next = entryOf(s).nextAt!
+  expect(next).toBeGreaterThanOrEqual(pressed + TIMED.restMs[0])
+  expect(next).toBeLessThanOrEqual(pressed + TIMED.restMs[1])
+  // Drawn when the ask ended and kept: reopening does not draw again
+  expect(entryOf(onSessionOpen(s, next - 60 * SEC, t, true).save).nextAt).toBe(next)
+  expect(texts(onPrompt(s, next - SEC, t, false))).toEqual([])
+  expect(texts(onTick(s, next + 60 * SEC, t, first))).toEqual([]) // no prompt, no ask
+  const at = next + 60 * SEC
+  const asked = onPrompt(s, at, t, true)
+  expect(texts(asked)).toEqual([TIMED.lines.start.terminal])
+  expect(entryOf(asked.save)).toMatchObject({ phase: 'run', startedAt: at, got: 1, asks: 2, warned: false })
+  const warn = at + (TIMED.seconds - TIMED.warnSeconds) * SEC
+  expect(texts(onTick(asked.save, warn, t, first))).toEqual([TIMED.lines.warn.terminal])
+})
+
+test('Timed date: the rests between asks are drawn, not all the same', async () => {
+  const { t } = day(TIMED, 2026)
+  let s = play(1).save
+  const gaps = new Set<number>()
+  for (let i = 0; i < 4; i++) {
+    const at = entryOf(s).nextAt!
+    s = onCommand(onPrompt(s, at, t, false).save, at + 10 * SEC, t, 'refill', first).save
+    gaps.add(entryOf(s).nextAt! - (at + 10 * SEC))
+  }
+  expect(entryOf(s).asks).toBe(5)
+  expect(gaps.size).toBeGreaterThan(1)
+})
+
+test('Timed date: settled on the first open after the day; enough of them give one prize, fewer the other', async () => {
+  const next = day(TIMED, 2026, 1, 9)
+  const won = play(TIMED.need + 2, 1)
+  // More than needed: the count goes on past it, with nothing else said
+  expect(timedBand(won.save, day(TIMED, 2026).t, won.at + 20 * SEC)?.count).toBe(count(TIMED.band.count, TIMED.need + 2))
+  expect(timedBand(won.save, day(TIMED, 2026).t, won.at + 20 * SEC)?.look.text).toBe(TIMED.band.rest)
+  const a = onSessionOpen(won.save, next.now, next.t, true)
+  expect(texts(a)).toEqual([fill(TIMED.lines.won, { n: String(TIMED.need + 2) }) + T().newDex])
+  expect(a.save.dex[TIMED.prizes.won]).toBe(1)
+  expect(a.save.dex[TIMED.prizes.lost]).toBe(undefined)
+  expect(timedBand(a.save, next.t, next.now)).toBe(null)
+  expect(texts(onSessionOpen(a.save, next.now + 60 * SEC, next.t, false))).toEqual([])
+  const lost = onSessionOpen(play(TIMED.need - 1, 3).save, next.now, next.t, true)
+  expect(texts(lost)).toEqual([fill(TIMED.lines.lost, { n: String(TIMED.need - 1) }) + T().newDex])
   expect(lost.save.dex[TIMED.prizes.lost]).toBe(1)
-  expect(texts(onTick(lost.save, late + 60 * SEC, t, first))).toEqual([])
-  expect(onCommand(lost.save, late + 70 * SEC, t, 'refill', first).reply).toBe(TIMED.replies.afterLost)
+  expect(lost.save.dex[TIMED.prizes.won]).toBe(undefined)
+  // Not on the day itself; the next year starts again
+  const late = day(TIMED, 2026, 0, 23)
+  expect(texts(onSessionOpen(won.save, late.now, late.t, true))).toEqual([])
+  const year = day(TIMED, 2027)
+  expect(texts(onPrompt(a.save, year.now, year.t, false))).toContain(TIMED.lines.start.desktop) // after the other days made up
+})
+
+test('Timed date: an ask started just before midnight still counts for the day, then the day settles', async () => {
+  const { t, now } = day(TIMED, 2026, 0, 23, 58)
+  const started = onPrompt(oldSave(), now, t, false)
+  const next = day(TIMED, 2026, 1, 0, 1)
+  expect(timedNow(started.save, next.t)?.entry?.phase).toBe('run')
+  // Still counting down: not settled yet
+  expect(entryOf(onTurn(started.save, next.now, next.t, first).save).phase).toBe('run')
+  const got = onCommand(started.save, next.now, next.t, 'refill', first)
+  expect(got.reply).toBe(count(TIMED.lines.got, 1))
+  const settled = onPrompt(got.save, next.now + 60 * SEC, next.t, false)
+  expect(texts(settled)).toEqual([fill(TIMED.lines.lost, { n: '1' }) + T().newDex])
+  expect(texts(onPrompt(settled.save, next.now + 120 * SEC, next.t, false))).toEqual([]) // no more asks
 })
 
 test('Timed date: before the first prompt the button only says it is too early; flip has its own line', async () => {
@@ -110,24 +202,19 @@ test('Timed date: dangerous commands only toast (at most once per gap); the egg 
   expect(texts(onObserved(a.save, now + 60 * SEC, t, DANGER, first))).toEqual([])
 })
 
-test('Timed date: a countdown started just before midnight settles on the next day', async () => {
-  const { t, now } = day(TIMED, 2026, 0, 23, 58)
-  const started = onPrompt(oldSave(), now, t, false)
-  const next = day(TIMED, 2026, 1, 0, 1)
-  expect(timedNow(started.save, next.t)?.entry?.phase).toBe('run')
-  const won = onCommand(started.save, next.now, next.t, 'refill', first)
-  expect(won.save.dex[TIMED.prizes.won]).toBe(1)
-})
-
-test('Timed date: the next day says it is over once; the next year starts again', async () => {
+test('Timed date: a day settled the old way (a single countdown) stays settled; the next day says it is over once', async () => {
   const { t, now } = day(TIMED, 2026)
-  const won = onCommand(onPrompt(oldSave(), now, t, false).save, now + 5 * SEC, t, 'refill', first).save
+  const s = oldSave()
+  s.dateMode[`${TIMED_ID}:2026`] = { phase: 'won', startedAt: now - 60 * SEC, from: 'live' }
+  s.dex[TIMED.prizes.won] = 1
+  expect(onCommand(s, now, t, 'refill', first).reply).toBe(TIMED.replies.afterWon)
+  expect(texts(onPrompt(s, now, t, false))).toEqual([])
+  expect(timedBand(s, t, now)?.look.text).toBe(TIMED.band.won.text)
   const next = day(TIMED, 2026, 1)
-  const opened = onSessionOpen(won, next.now, next.t, true)
+  const opened = onSessionOpen(s, next.now, next.t, true)
   expect(texts(opened)).toEqual([TIMED.lines.over])
+  expect(opened.save.dex[TIMED.prizes.won]).toBe(1)
   expect(texts(onSessionOpen(opened.save, next.now + 60 * SEC, next.t, false))).toEqual([])
-  const year = day(TIMED, 2027)
-  expect(texts(onPrompt(opened.save, year.now, year.t, false))).toContain(TIMED.lines.start.desktop)
 })
 
 test('Timed date: missed (or opened without a prompt) gives the losing prize on the next open, once', async () => {
@@ -187,6 +274,13 @@ test('Timed date: the band keeps the timer and drops the name first when narrow'
   expect(dateArt(s, t, now + SEC)).toEqual({ base: TIMED.art.base, face: TIMED.art.face, steam: false })
   expect(dateArt(s, t, now + (TIMED.seconds - 5) * SEC)?.face).toBe(TIMED.art.warnFace)
   expect(dateAction(s, t)).toEqual({ label: TIMED.button, paneLabel: TIMED.paneButton, hotkey: TIMED.hotkey, args: 'refill' })
+  // The count shows while asking, emoji-free; between asks it gets its mark, the costume stays and the timer goes
+  expect(segs.map(x => x.text)).toContain(count(TIMED.band.count, 0))
+  const rest = onCommand(s, now + 2 * SEC, t, 'refill', first).save
+  const restSegs = bandSegments(rest, t, now + 3 * SEC).map(x => x.text)
+  expect(restSegs).toContain(`${count(TIMED.band.count, 1)} ${TIMED.band.mark}`)
+  expect(restSegs.some(x => /^\d:\d\d$/.test(x))).toBe(false)
+  expect(dateArt(rest, t, now + 3 * SEC)).toEqual({ base: TIMED.art.base, face: TIMED.art.face, steam: false })
 })
 
 // ---- grant ----
