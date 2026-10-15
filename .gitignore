@@ -13,6 +13,8 @@ docs/superpowers/
 
 # Misc
 .claude-plugin/types/
+# Written by Claude Code when the mod is loaded with --plugin-dir (extends .claude-plugin/types/tsconfig.json)
+tsconfig.json
 __pycache__/
 *.pyc
 node_modules/

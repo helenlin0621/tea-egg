@@ -448,7 +448,7 @@ export const register: Register = on => {
       if (!save) return next(e)
       const now = await $.clock.now()
       const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
-      // Reserve room on the right for the panel and × buttons (1 space + label + 1 space + × + 1 column of margin)
+      // Reserve room on the right for the panel and x buttons (1 space + label + 1 space + x + 1 column of margin)
       // A special-date button (dates.ts) stays on the band; the stats give way first
       const action = dateAction(save, localNow(now))
       const pressable = action !== null && action.done !== true ? action : null
@@ -470,7 +470,7 @@ export const register: Register = on => {
         }
       }
       return (
-        // Stats on the left; the panel and × buttons pinned to the right edge
+        // Stats on the left; the panel and x buttons pinned to the right edge
         <Box justifyContent="space-between" width="100%">
           <Box key="stats">
             {segs.map((seg, i) => (
@@ -497,7 +497,7 @@ export const register: Register = on => {
             <Text key="gap"> </Text>
             <Button key="panel" label={T().buttons.panel} plain dimColor onPress={onPanel} />
             <Text key="gap2"> </Text>
-            <Button key="hide" label="×" plain dimColor onPress={onHide} />
+            <Button key="hide" label="x" plain dimColor onPress={onHide} />
           </Box>
         </Box>
       )
