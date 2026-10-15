@@ -185,7 +185,7 @@ test('Special-date mode: the fake-date env var takes effect; the real egg is unt
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
   const after = (await saved($))
   expect(after.egg).toEqual(before)
-  expect(after.dateMode['2027']!.human).toBe(dm.humanStep)
+  expect(after.dateMode['d1:2027']!.human).toBe(dm.humanStep)
 })
 
 const SDK_START = { cwd: '.', surface: null, isInteractive: false } as const

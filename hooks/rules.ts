@@ -110,10 +110,11 @@ export function caution(prev: Save, keyword: string, now: number, rng: () => num
   return { save, effects: [] }
 }
 
-// The special-date-mode prize egg hides even its icon until collected. Decided by "is it the prize", not by slot position,
+// Special-date prize eggs hide even its icon until collected. Decided by "is it the prize", not by slot position,
 // so egg kinds added later (regular or special) can sit in any slot without being mistaken for it
 export function isPrizeEgg(id: string, sp: Spoilers = decodeSpoilers()): boolean {
-  return id === sp.dateMode.prize
+  if (id === sp.dateMode.prize) return true
+  return Object.values(sp.dates ?? {}).some(d => (d.kind === 'timed' ? d.prizes.won === id || d.prizes.lost === id : d.prize === id))
 }
 
 // Pane header: the pictures carry the rest

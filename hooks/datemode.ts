@@ -12,15 +12,25 @@ export function isSpecialDay(t: LocalTime): boolean {
   return t.month === dm.month && t.day === dm.day
 }
 
+// Days the egg is paused: the first special date and every 'timed' one (dates.ts). On the others the egg goes on as usual
+export function isPausedDay(t: Pick<LocalTime, 'month' | 'day'>): boolean {
+  const dm = mode()
+  if (t.month === dm.month && t.day === dm.day) return true
+  return Object.values(decodeSpoilers().dates).some(d => d.kind === 'timed' && d.month === t.month && d.day === t.day)
+}
+
 function isAfterSpecialDay(t: LocalTime): boolean {
   const dm = mode()
   return t.month > dm.month || (t.month === dm.month && t.day > dm.day)
 }
 
+export const FIRST = 'd1'
+const keyOf = (year: number) => `${FIRST}:${year}`
+
 export function yearOf(s: Save, year: number): DateModeYear {
-  const key = String(year)
+  const key = keyOf(year)
   s.dateMode[key] ??= { seen: false, revealed: false, human: 0, lastToast: {} }
-  return s.dateMode[key]!
+  return s.dateMode[key] as DateModeYear
 }
 
 function reveal(step: Step, y: DateModeYear, text: string): void {
@@ -67,8 +77,10 @@ export function specialEvent(prev: Save, now: number, t: LocalTime, kind: 'testF
 
 export function specialMakeup(prev: Save, t: LocalTime): Step {
   const step = begin(prev)
-  for (const [key, y] of Object.entries(step.save.dateMode)) {
-    const year = Number(key)
+  for (const [key, entry] of Object.entries(step.save.dateMode)) {
+    if (!key.startsWith(`${FIRST}:`)) continue
+    const y = entry as DateModeYear
+    const year = Number(key.slice(FIRST.length + 1))
     const isPast = year < t.year || (year === t.year && isAfterSpecialDay(t))
     if (isPast && y.seen && !y.revealed) reveal(step, y, mode().lines.makeup)
   }
@@ -77,7 +89,7 @@ export function specialMakeup(prev: Save, t: LocalTime): Step {
 
 export function specialBand(s: Save, t: LocalTime) {
   const { band } = mode()
-  const human = s.dateMode[String(t.year)]?.human ?? 0
+  const human = (s.dateMode[keyOf(t.year)] as DateModeYear | undefined)?.human ?? 0
   const hint = band.hints[Math.min(band.hints.length - 1, Math.floor((human / 100) * band.hints.length))]!
   return { icon: band.icon, face: band.face, title: band.title, bar: band.bar, human, hint }
 }

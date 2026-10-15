@@ -1,7 +1,8 @@
 import { update, type EngineInterface, type Register, type Timer } from 'claude-code'
 import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTime } from './clock'
 import { observe, OBSERVED_TOOLS } from './detect'
-import { dexTitle, onCommand, onObserved, onSessionOpen, onTick, onTurn } from './flow'
+import { dateAction, paneRefillLabel, remainingMs, timedNow, timedTick } from './dates'
+import { dexTitle, onCommand, onObserved, onPrompt, onSessionOpen, onTick, onTurn } from './flow'
 import { BAND_STORE_KEY, FAKE_STORE_KEY, STORE_KEY, SYNC_DISMISSED_KEY } from './model'
 import { compareLines, offerFor, type SyncOffer } from './sync'
 import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, previewArt, SVG_PX, type Art } from './panel'
@@ -213,6 +214,62 @@ const confirmReply = (r: 'done' | 'ask-first' | 'nothing') =>
 // Activate only once per load; keep the timer handle and cancel it before registering again
 let tick: Timer | null = null
 
+// A timed special date's countdown (dates.ts): redraw every second so the timer moves, and settle it right on time
+// (the warning and the end) instead of waiting for the next event. Re-armed after anything that may start or end it
+let beat: Timer | null = null
+let alarms: Timer[] = []
+let armedFor: string | null = null
+
+async function armCountdown($: EngineInterface, save: Save): Promise<void> {
+  const now = await $.clock.now()
+  const day = timedNow(save, localNow(now))
+  const run = day?.entry?.phase === 'run' ? day : null
+  const id = run ? `${run.key}@${run.entry!.startedAt}/${run.entry!.warned === true}` : null
+  if (id === armedFor) return
+  armedFor = id
+  beat?.cancel()
+  beat = null
+  for (const a of alarms) a.cancel()
+  alarms = []
+  try {
+    $.ui.invalidate('ui.render')
+  } catch {
+    // Nothing drawn yet
+  }
+  if (!run) return
+  beat = $.clock.every(1000, () => {
+    try {
+      $.ui.invalidate('ui.render')
+    } catch {
+      // Ignore silently
+    }
+  })
+  const settleNow = () => {
+    void mutate(ioOf($), (s, at) => timedTick(s, at))
+      .then(step => armCountdown($, step.save))
+      .catch(() => undefined)
+  }
+  const left = remainingMs(run.spec, run.entry!, now)
+  const warnIn = left - run.spec.warnSeconds * 1000
+  if (warnIn > 0 && run.entry!.warned !== true) alarms.push($.clock.after(warnIn, settleNow))
+  alarms.push($.clock.after(left + 100, settleNow))
+}
+
+// Run /egg <args> from a button (the band's or the pane's special-date button), toasting the reply
+async function pressArgs($: EngineInterface, args: string): Promise<void> {
+  const step = await mutate(ioOf($), (s, at) => onCommand(s, at, localNow(at), args, rng))
+  if (step.reply) $.ui.toast(step.reply)
+  await armCountdown($, step.save)
+}
+
+const hasTerminal = async ($: EngineInterface): Promise<boolean> => {
+  try {
+    return (await $.session.surfaces()).includes('terminal')
+  } catch {
+    return false
+  }
+}
+
 // On desktop a new session's surface often attaches after the Mod loads, so the attach signal is missed:
 // if session.start sees no surface, poll every 3 seconds for up to 10 minutes and activate once one shows up
 const WATCH_MS = 3_000
@@ -266,7 +323,8 @@ async function activate($: EngineInterface): Promise<void> {
       // No offer when the other saves can't be read
     }
     const counted = (await $.state.get(COUNTED_REF)).value === true
-    await mutate(ioOf($), (s, at) => onSessionOpen(s, at, localNow(at), !counted))
+    const opened = await mutate(ioOf($), (s, at) => onSessionOpen(s, at, localNow(at), !counted))
+    await armCountdown($, opened.save).catch(() => undefined)
     if (!counted) await $.state.set(COUNTED_REF, true)
     await pruneUse($, now).catch(() => undefined)
     tick?.cancel()
@@ -316,7 +374,12 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     try {
       if (!interactive && (await hasSurface($))) await activate($)
-      if (interactive) await withUse($, usePrompt)
+      if (interactive) {
+        await withUse($, usePrompt)
+        const terminal = await hasTerminal($)
+        const step = await mutate(ioOf($), (s, at) => onPrompt(s, at, localNow(at), terminal))
+        await armCountdown($, step.save)
+      }
     } catch {
       // Ignore silently
     }
@@ -386,7 +449,10 @@ export const register: Register = on => {
       const now = await $.clock.now()
       const columns = e.props.bodyColumns ?? e.viewport?.columns ?? 80
       // Reserve room on the right for the panel and × buttons (1 space + label + 1 space + × + 1 column of margin)
-      const reserve = strWidth(T().buttons.panel) + 4
+      // A special-date button (dates.ts) stays on the band; the stats give way first
+      const action = dateAction(save, localNow(now))
+      const pressable = action !== null && action.done !== true ? action : null
+      const reserve = strWidth(T().buttons.panel) + 4 + (pressable ? strWidth(pressable.label) + 5 : 0)
       const segs = fitSegments(bandSegments(save, localNow(now), now), Math.max(10, columns - reserve))
       const { Box, Text, Button } = $.ui.resolve(e)
       const onPanel = async () => {
@@ -412,6 +478,22 @@ export const register: Register = on => {
             ))}
           </Box>
           <Box key="actions">
+            {pressable && <Text key="date-gap"> </Text>}
+            {pressable && (
+              <Button
+                key="date-action"
+                label={`[ ${pressable.label} ]`}
+                hotkey={pressable.hotkey || undefined}
+                plain
+                onPress={async () => {
+                  try {
+                    await pressArgs($, pressable.args)
+                  } catch {
+                    // A button error must never affect the user
+                  }
+                }}
+              />
+            )}
             <Text key="gap"> </Text>
             <Button key="panel" label={T().buttons.panel} plain dimColor onPress={onPanel} />
             <Text key="gap2"> </Text>
@@ -451,8 +533,7 @@ export const register: Register = on => {
       }
       const press = (args: string) => async () => {
         try {
-          const step = await mutate(ioOf($), (s, at) => onCommand(s, at, localNow(at), args, rng))
-          if (step.reply) $.ui.toast(step.reply)
+          await pressArgs($, args)
         } catch {
           // A button error must never affect the user
         }
@@ -473,6 +554,7 @@ export const register: Register = on => {
       const slots = decodeSpoilers().dexSlots
       const preview = (await $.state.get(PREVIEW_REF)).value ?? null
       const art = preview !== null ? previewArt(preview, e.surface, columns) : eggArt(save, t, now, e.surface, columns)
+      const paneAction = dateAction(save, t)
       return (
         <Box flexDirection="column">
           {preview !== null && (
@@ -504,7 +586,12 @@ export const register: Register = on => {
           {draw(art, 'egg')}
           {panelLines(save, t, now).map((line, i) => <Text key={String(i)}>{line}</Text>)}
           <Box>
-            <Button key="refill" label={T().buttons.refill} onPress={press('refill')} />
+            <Button
+              key="refill"
+              label={paneRefillLabel(save, t) ?? T().buttons.refill}
+              hotkey={paneAction?.args === 'refill' ? paneAction.hotkey : undefined}
+              onPress={press('refill')}
+            />
             <Button key="flip" label={T().buttons.flip} onPress={press('flip')} />
             <Button key="dex" label={T().buttons.dex} onPress={() => update($, SHOW_DEX_REF, v => !v)} />
             <Button
@@ -518,6 +605,10 @@ export const register: Register = on => {
                 }
               }}
             />
+            {paneAction && paneAction.args !== 'refill' && paneAction.done !== true && (
+              <Button key="date-action" label={paneAction.paneLabel} hotkey={paneAction.hotkey || undefined} onPress={press(paneAction.args)} />
+            )}
+            {paneAction?.done === true && <Text key="date-done" dimColor> {paneAction.paneLabel}</Text>}
           </Box>
           {showDex && <Text>{dexHeader(save, dexTitle(t))}</Text>}
           {showDex && (
@@ -579,6 +670,7 @@ export const register: Register = on => {
         return { text: previewText(T().previewReply, chosen) }
       }
       const step = await mutate(ioOf($), (s, at) => onCommand(s, at, localNow(at), args, rng))
+      await armCountdown($, step.save).catch(() => undefined)
       return { text: step.reply ?? '' }
     } catch {
       return { text: T().error }

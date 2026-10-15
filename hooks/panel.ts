@@ -1,8 +1,9 @@
 import type { Save } from '../types'
 import type { LocalTime } from './clock'
+import { dateArt, dateLook, timedBand } from './dates'
 import { compose, rasterCells, svgSource, SIZE, type Layer } from './pixels'
 import { decodeSpoilers } from './spoilers'
-import { ICON_OWN_PALETTES, ICON_PALETTE, PALETTE, SPRITES } from './sprites'
+import { ICON_OWN_PALETTES, ICON_PALETTE, LAYER_PALETTE_OF, LAYER_PALETTES, PALETTE, SPRITES } from './sprites'
 import { T } from './text'
 import { FACE_TEXT, bar, faceOf, hintOf, stageOf, strWidth, type Face } from './view'
 
@@ -32,17 +33,37 @@ function faceKey(face: Face): string {
   return `face_${face === 'dry' ? 'cry' : face}`
 }
 
-function stackKeys(base: string, face: string): string[] {
-  const steam = !base.endsWith('_dry') && face !== 'face_flip'
-  return [base, ...(steam ? ['steam'] : []), face]
+function stackKeys(base: string, face: string, steam = true): string[] {
+  const withSteam = steam && !base.endsWith('_dry') && face !== 'face_flip'
+  return [base, ...(withSteam ? ['steam'] : []), face]
 }
 
+// Special-date layers are in the encoded spoilers; a missing layer is skipped
 function layersOf(keys: readonly string[]): Layer[] {
-  return keys.flatMap(k => (SPRITES[k] ? [{ pixels: SPRITES[k] }] : []))
+  const hidden = decodeSpoilers().sprites
+  return keys.flatMap(k => {
+    const pixels = SPRITES[k] ?? hidden[k]
+    return pixels ? [{ pixels }] : []
+  })
+}
+
+// Layers in a group of their own (a costume and its faces) use that group's palette
+const paletteOfLayers = (keys: readonly string[]): readonly number[] => {
+  const group = keys.map(k => LAYER_PALETTE_OF[k]).find(g => g !== undefined)
+  return (group !== undefined ? LAYER_PALETTES[group] : undefined) ?? PALETTE
+}
+
+// The keys to stack now, special dates included (dates.ts); null when a special date shows a dex icon instead
+function eggKeys(s: Save, t: LocalTime, now: number): string[] | null {
+  const special = dateArt(s, t, now)
+  if (special?.prize !== undefined) return null
+  const face = special?.face ?? faceKey(faceOf(s, t, now))
+  return stackKeys(special?.base ?? baseKey(s), face, special?.steam ?? true)
 }
 
 export function eggLayers(s: Save, t: LocalTime, now: number): Layer[] {
-  return layersOf(stackKeys(baseKey(s), faceKey(faceOf(s, t, now))))
+  const keys = eggKeys(s, t, now)
+  return keys ? layersOf(keys) : []
 }
 
 function artOf(pixels: string, surface: string, palette: readonly number[] = PALETTE): Art {
@@ -64,15 +85,21 @@ function fitWidth(text: string, cols: number): string {
 }
 
 export function eggArt(s: Save, t: LocalTime, now: number, surface: string, columns: number): Art {
-  const layers = eggLayers(s, t, now)
   const tooNarrow = surface === 'terminal' && columns < SIZE
+  const prize = dateArt(s, t, now)?.prize
+  if (prize !== undefined && !tooNarrow) {
+    const icon = dexArt(prize, true, surface)
+    if (icon) return icon
+  }
+  const keys = eggKeys(s, t, now) ?? []
+  const layers = layersOf(keys)
   if (layers.length === 0 || tooNarrow) {
     const stage = stageOf(s.egg.progress)
     // Only a 4-column face goes inside the frame (parentheses removed) to keep alignment
     const face = fitWidth(FACE_TEXT[faceOf(s, t, now)].replace(/[()]/g, ''), FACE_COLS)
     return { kind: 'ascii', lines: [...ASCII_EGG[stage]!.map(l => l.replace('FACE', face)), `   ${T().stageNames[stage]}`] }
   }
-  return artOf(compose(layers), surface)
+  return artOf(compose(layers), surface, paletteOfLayers(keys))
 }
 
 // Dev preview: every picture the game can actually show, as "<base>+<face>", without reading or changing the save.
@@ -130,9 +157,14 @@ export function dexArt(id: string, owned: boolean, surface: string): Art | null 
 }
 
 export function panelLines(s: Save, t: LocalTime, now: number): string[] {
-  const hint = hintOf(s, now)
+  // A timed special date: the egg is paused; show the countdown (or how it ended) instead of its stats
+  const timed = timedBand(s, t, now)
+  if (timed) return [`${s.egg.name} #${s.egg.no}  ${timed.look.face}`, ...(timed.timer !== null ? [timed.timer] : []), timed.look.text]
+  // Another special date's face and line, as on the band
+  const look = dateLook(s, t)
+  const hint = look ? look.text : hintOf(s, now)
   return [
-    `${s.egg.name} #${s.egg.no}  ${FACE_TEXT[faceOf(s, t, now)]}`,
+    `${s.egg.name} #${s.egg.no}  ${look?.face ?? FACE_TEXT[faceOf(s, t, now)]}`,
     `${T().flavor} ${bar(s.egg.progress, 10)} ${Math.floor(s.egg.progress)}%`,
     `${T().broth} ${bar(s.egg.broth, 10)} ${Math.round(s.egg.broth)}`,
     `${T().mood} ${bar(s.egg.mood, 10)} ${Math.round(s.egg.mood)}`,

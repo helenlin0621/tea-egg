@@ -1,5 +1,6 @@
 import type { Save } from '../types'
 import type { LocalTime } from './clock'
+import { dateLook, timedBand } from './dates'
 import { isSpecialDay, specialBand } from './datemode'
 import { RULES } from './engine'
 import { predictHint } from './rules'
@@ -78,7 +79,8 @@ export function hintOf(s: Save, now: number): string | null {
   return predictHint(s.egg, now)
 }
 
-export type Seg = { text: string; color?: string; dim?: boolean; sep?: boolean }
+// keep: the higher, the longer it stays when the band is too narrow (ties: the rightmost goes first)
+export type Seg = { text: string; color?: string; dim?: boolean; sep?: boolean; keep?: number }
 
 const sep = (): Seg => ({ text: T().separator, dim: true, sep: true })
 
@@ -93,29 +95,47 @@ export function bandSegments(s: Save, t: LocalTime, now: number): Seg[] {
       { text: b.hint, dim: true },
     ]
   }
+  // A timed special date: its own band while counting down and once settled (dates.ts); the name goes before the timer
+  const timed = timedBand(s, t, now)
+  if (timed) {
+    const segs: Seg[] = [{ text: ` ${timed.look.icon}${timed.look.face}` }, { text: `  ${s.egg.name} #${s.egg.no}`, keep: 1 }]
+    if (timed.timer !== null) segs.push(sep(), { text: timed.timer, keep: 2 })
+    segs.push(sep(), { text: timed.look.text, dim: true })
+    return segs
+  }
+  // Another special date today: its icon, face and line in place of the egg's
+  const look = dateLook(s, t)
   const stage = stageOf(s.egg.progress)
   const segs: Seg[] = [
-    { text: ` 🥚${stage === 1 ? '⸝' : ''}` },
-    { text: FACE_TEXT[faceOf(s, t, now)], color: STAGE_COLOR[stage] },
+    { text: look ? ` ${look.icon}` : ` 🥚${stage === 1 ? '⸝' : ''}` },
+    { text: look ? look.face : FACE_TEXT[faceOf(s, t, now)], color: STAGE_COLOR[stage] },
     { text: `  ${s.egg.name} #${s.egg.no}` },
     sep(),
     { text: `${T().flavor} ${bar(s.egg.progress, 10)} ${Math.floor(s.egg.progress)}%` },
     sep(),
     { text: `${T().broth} ${bar(s.egg.broth, 5)}` },
   ]
-  const hint = hintOf(s, now)
+  const hint = look ? look.text : hintOf(s, now)
   if (hint !== null) segs.push(sep(), { text: hint, dim: true })
   return segs
 }
 
-// Drop whole segments from the right until it fits; the first segment (the egg) always stays, truncated if needed
+// Drop whole segments until it fits: the lowest keep first, from the right on a tie, with the separator before it
+// (a separator left at the end goes too).
+// The first segment (the egg) always stays, truncated if needed
 export function fitSegments(segs: Seg[], columns: number): Seg[] {
   const out = [...segs]
   const width = () => out.reduce((w, seg) => w + strWidth(seg.text), 0)
   while (out.length > 1 && width() > columns) {
-    out.pop()
-    if (out.length > 1 && out[out.length - 1]!.sep === true) out.pop()
+    let drop = -1
+    for (let i = out.length - 1; i >= 1; i--) {
+      if (out[i]!.sep !== true && (drop < 0 || (out[i]!.keep ?? 0) < (out[drop]!.keep ?? 0))) drop = i
+    }
+    if (drop < 0) break
+    out.splice(drop, 1)
+    if (out[drop - 1]?.sep === true) out.splice(drop - 1, 1)
   }
+  while (out.length > 1 && out[out.length - 1]!.sep === true) out.pop()
   if (width() > columns) out[0] = { ...out[0]!, text: truncate(out[0]!.text, columns) }
   return out
 }

@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 import { decodeSpoilers } from '../hooks/spoilers'
-import { caution, crack, dexCaption, dexHeader, dexText, outcome, predictHint, settle } from '../hooks/rules'
+import { caution, crack, dexCaption, dexHeader, dexText, isPrizeEgg, outcome, predictHint, settle } from '../hooks/rules'
 import { newSave, newEgg } from '../hooks/model'
 import { RULES, turnDone } from '../hooks/engine'
 import { at } from './helpers'
@@ -140,6 +140,7 @@ test('Dex: the prize egg hides its icon until collected, whatever its slot', asy
   const sp = structuredClone(decodeSpoilers())
   const prize = sp.dateMode.prize
   const others = sp.dexSlots.filter(id => id !== prize)
+  const prizes = sp.dexSlots.filter(id => isPrizeEgg(id, sp))
   // Move the prize egg to the front and append a new regular egg at the end
   sp.eggs.newcomer = { name: '新蛋', icon: '🆕' }
   sp.dexSlots = [prize, ...others, 'newcomer']
@@ -147,7 +148,9 @@ test('Dex: the prize egg hides its icon until collected, whatever its slot', asy
   expect(text).toContain(`0/${sp.dexSlots.length}`)
   expect(text).toContain('🆕 ???')
   expect(text).not.toContain(`${sp.eggs[prize]!.icon} ???`)
-  expect(text.split('❓ ???').length - 1).toBe(1)
+  // Every special date's prize hides (the first date's and the others'); regular eggs, the newcomer included, don't
+  expect(prizes.length).toBe(1 + Object.values(sp.dates).reduce((n, d) => n + (d.kind === 'timed' ? 2 : 1), 0))
+  expect(text.split('❓ ???').length - 1).toBe(prizes.length)
 })
 
 test('A new egg starts with a fresh daily flavor cap, even after the previous egg used it up today', async () => {

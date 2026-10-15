@@ -1,6 +1,6 @@
 import type { Save } from '../types'
 import { daysBetween, type LocalTime } from './clock'
-import { isSpecialDay } from './datemode'
+import { isPausedDay } from './datemode'
 import { T, pick } from './text'
 
 export type Effect = { kind: 'toast'; text: string }
@@ -89,8 +89,7 @@ function pausedDaysBetween(a: string, b: string): number {
     const d = new Date(start + i * 24 * 60 * MIN)
     const month = d.getUTCMonth() + 1
     const day = d.getUTCDate()
-    const date = d.toISOString().slice(0, 10)
-    if (isSpecialDay({ date, year: d.getUTCFullYear(), month, day, hour: 12, minute: 0 })) n++
+    if (isPausedDay({ month, day })) n++
   }
   return n
 }
