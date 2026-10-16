@@ -163,12 +163,14 @@ export function dexArt(id: string, owned: boolean, surface: string): Art | null 
 }
 
 export function panelLines(s: Save, t: LocalTime, now: number): string[] {
-  // The first special date: the human's progress, broth and mood in place of the paused egg's
+  // The first special date: the human's progress, broth and mood in place of the paused egg's. The human's number
+  // gets its own line so the three bars keep the same two-character labels as the egg's and line up
   if (isSpecialDay(t)) {
     const b = specialBand(s, t)
     return [
       `${b.title}  ${b.face}`,
-      `${b.who} ${bar(b.human, 10)} ${Math.round(b.human)}%`,
+      b.name,
+      `${b.flavor} ${bar(b.human, 10)} ${Math.round(b.human)}%`,
       `${T().broth} ${bar(b.broth, 10)} ${Math.round(b.broth)}`,
       `${T().mood} ${bar(b.mood, 10)} ${Math.round(b.mood)}`,
       b.hint,

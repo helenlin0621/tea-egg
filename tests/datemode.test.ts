@@ -97,7 +97,8 @@ test('Special-date mode: the pane shows the stand-in picture and the band\'s tit
   const b = specialBand(s, t)
   expect(panelLines(s, t, T)).toEqual([
     `${b.title}  ${b.face}`,
-    `${b.who} ${bar(b.human, 10)} ${Math.round(b.human)}%`,
+    b.name,
+    `${b.flavor} ${bar(b.human, 10)} ${Math.round(b.human)}%`,
     `${TX().broth} ${bar(b.broth, 10)} ${Math.round(b.broth)}`,
     `${TX().mood} ${bar(b.mood, 10)} ${Math.round(b.mood)}`,
     b.hint,

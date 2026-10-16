@@ -197,8 +197,9 @@ export function specialBand(s: Save, t: LocalTime) {
   const mood = moodOf(y)
   const hint = broth < LOW_BROTH ? band.lowHint : band.hints[Math.min(band.hints.length - 1, Math.floor((human / 100) * band.hints.length))]!
   const face = broth <= 0 ? band.faces.worried : mood >= 70 ? band.faces.happy : mood < 30 ? band.faces.bored : band.face
-  const who = `${fill(band.who, { n: String(humansDone(y) + 1) })} ${band.flavor}`
-  return { icon: band.icon, face, title: band.title, who, human, broth, mood, hint }
+  const name = fill(band.who, { n: String(humansDone(y) + 1) })
+  const who = `${name} ${band.flavor}`
+  return { icon: band.icon, face, title: band.title, name, flavor: band.flavor, who, human, broth, mood, hint }
 }
 
 // Same as the egg's low-broth hint (engine.ts RULES.lowBroth; not imported: engine.ts imports this file)
