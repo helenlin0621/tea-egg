@@ -46,6 +46,7 @@ export type DateMode = {
     reveal: string
     makeup: string
     harvest: string // {n}
+    next: string // {n}: the human that goes in right after a harvest
     peek: { water: string; flip: string }
     dry: BySurface
   }
