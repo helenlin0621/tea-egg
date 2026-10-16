@@ -163,10 +163,16 @@ export function dexArt(id: string, owned: boolean, surface: string): Art | null 
 }
 
 export function panelLines(s: Save, t: LocalTime, now: number): string[] {
-  // The first special date: the band's title, progress and hint (the paused egg's stats stay hidden)
+  // The first special date: the human's progress, broth and mood in place of the paused egg's
   if (isSpecialDay(t)) {
     const b = specialBand(s, t)
-    return [`${b.title}  ${b.face}`, `${b.bar} ${bar(b.human, 10)} ${Math.round(b.human)}%`, b.hint]
+    return [
+      `${b.title}  ${b.face}`,
+      `${b.who} ${bar(b.human, 10)} ${Math.round(b.human)}%`,
+      `${T().broth} ${bar(b.broth, 10)} ${Math.round(b.broth)}`,
+      `${T().mood} ${bar(b.mood, 10)} ${Math.round(b.mood)}`,
+      b.hint,
+    ]
   }
   // A timed special date: the egg is paused; show the ask's countdown and the count instead of its stats.
   // The countdown line keeps its emoji right of the digits: it changes every second (see bandSegments)

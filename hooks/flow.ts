@@ -17,9 +17,22 @@ import {
   timedSeen,
   timedTick,
 } from './dates'
-import { isPausedDay, isSpecialDay, specialEvent, specialMakeup, specialSeen, specialTurn } from './datemode'
+import {
+  humanCare,
+  humanClock,
+  humansDone,
+  humanToolFailed,
+  isPausedDay,
+  isSpecialDay,
+  specialEvent,
+  specialMakeup,
+  specialPrompt,
+  specialSeen,
+  specialTurn,
+  yearOf,
+} from './datemode'
 import type { Observation } from './detect'
-import { addActiveDay, flip, pauseClocks, refill, testObserved, tick, toolFailed, turnDone, type Step } from './engine'
+import { RULES, addActiveDay, flip, pauseClocks, refill, testObserved, tick, toolFailed, turnDone, type Step } from './engine'
 import { caution, crack, dexText, settle } from './rules'
 import { decodeSpoilers } from './spoilers'
 import { T, fill } from './text'
@@ -61,19 +74,28 @@ export function onSessionOpen(prev: Save, now: number, t: LocalTime, isNewSessio
 }
 
 // The person sent a prompt: the day's countdown, grant or reply may start. terminal: a terminal is attached
-export function onPrompt(prev: Save, now: number, t: LocalTime, terminal: boolean): Step {
+export function onPrompt(prev: Save, now: number, t: LocalTime, terminal: boolean, rng: () => number = Math.random): Step {
+  if (isSpecialDay(t)) return specialPrompt(prev, now, t, rng)
   const caught = datesCatchUp(prev, now, t)
   return then(caught, s => datesPrompt(s, now, t, terminal))
 }
 
+// The first special date pauses the egg's clocks; the human's mood goes down over the same time instead
+function pauseForHuman(prev: Save, now: number, t: LocalTime): Step {
+  const save = structuredClone(prev)
+  const elapsed = Math.max(0, Math.min(now - save.clocks.lastTickAt, RULES.maxTickGapMs))
+  humanClock(save, t, elapsed, RULES.moodStepMs, RULES.moodStep)
+  return pauseClocks(save, now)
+}
+
 export function onTick(prev: Save, now: number, t: LocalTime, rng: () => number): Step {
-  if (isSpecialDay(t)) return then(pauseClocks(prev, now), s => specialSeen(s, t))
+  if (isSpecialDay(t)) return then(pauseForHuman(prev, now, t), s => specialSeen(s, t))
   if (isPausedDay(t)) return then(pauseClocks(prev, now), s => timedTick(s, now))
   return then(settle(tick(prev, now, t), now, rng), s => timedTick(s, now))
 }
 
 export function onTurn(prev: Save, now: number, t: LocalTime, rng: () => number): Step {
-  if (isSpecialDay(t)) return then(pauseClocks(prev, now), s => specialTurn(s, now, t, rng))
+  if (isSpecialDay(t)) return then(pauseForHuman(prev, now, t), s => specialTurn(s, now, t, rng))
   const caught = then(specialMakeup(prev, t), s => datesCatchUp(s, now, t))
   if (isPausedDay(t)) return then(caught, s => pauseClocks(s, now))
   const done = settle(then(caught, s => turnDone(s, now, t, rng)), now, rng)
@@ -83,7 +105,8 @@ export function onTurn(prev: Save, now: number, t: LocalTime, rng: () => number)
 export function onObserved(prev: Save, now: number, t: LocalTime, obs: Observation, rng: () => number): Step {
   if (isSpecialDay(t)) {
     const kind = obs.danger !== null ? 'danger' : obs.test === 'fail' ? 'testFail' : obs.test === 'pass' ? 'testPass' : null
-    return kind === null ? { save: prev, effects: [] } : specialEvent(prev, now, t, kind, rng)
+    const step: Step = kind === null ? { save: prev, effects: [] } : specialEvent(prev, now, t, kind, rng)
+    return obs.failed ? then(step, s => humanToolFailed(s, t)) : step
   }
   if (isTimedDay(prev, t)) return obs.danger !== null ? timedDanger(prev, now, t) : { save: prev, effects: [] }
   if (obs.danger !== null) {
@@ -108,12 +131,11 @@ export function onObserved(prev: Save, now: number, t: LocalTime, obs: Observati
 export function onCommand(prev: Save, now: number, t: LocalTime, args: string, rng: () => number): Step {
   const [sub = '', ...rest] = args.split(/\s+/)
   const special = isSpecialDay(t)
-  const replies = decodeSpoilers().dateMode.replies
   // The reply date's hidden command (the same as its button); like any unknown command on other days
   if (replyCommand().includes(sub)) return replyPress(prev, t) ?? { save: prev, effects: [], reply: T().unknown }
   switch (sub) {
     case 'refill': {
-      if (special) return { save: prev, effects: [], reply: replies.refill }
+      if (special) return humanCare(prev, t, 'refill')
       // A timed date: refill presses the day's button instead (the band's button does the same)
       if (paneRefillLabel(prev, t) !== null) {
         const pressed = timedPress(prev, now, t)
@@ -124,15 +146,22 @@ export function onCommand(prev: Save, now: number, t: LocalTime, args: string, r
       return cross ? { ...step, reply: cross } : step
     }
     case 'flip': {
-      if (special) return { save: prev, effects: [], reply: replies.flip }
+      if (special) return humanCare(prev, t, 'flip')
       const costume = timedFlipReply(prev, t)
       if (costume !== null) return { save: prev, effects: [], reply: costume }
       const step = settle(flip(prev, now, t), now, rng)
       const cross = crossReply(prev, t, 'flip')
       return cross ? { ...step, reply: cross } : step
     }
-    case 'dex':
-      return { save: prev, effects: [], reply: dexText(prev, dexTitle(t)) }
+    case 'dex': {
+      const text = dexText(prev, dexTitle(t))
+      if (!special) return { save: prev, effects: [], reply: text }
+      // That day the dex also counts the humans marinated so far this year
+      const done = humansDone(yearOf(structuredClone(prev), t.year))
+      const count = fill(decodeSpoilers().dateMode.dexCount, { n: String(done) })
+      return { save: prev, effects: [], reply: `${text}
+ ${count}` }
+    }
     case 'help':
       return { save: prev, effects: [], reply: T().help }
     case 'name': {

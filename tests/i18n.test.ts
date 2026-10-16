@@ -143,7 +143,7 @@ test('English: special-date mode replies come from the English spoiler text', as
     expect(onCommand(newSave(1), 1, special(), 'refill', never).reply).toBe(dm.replies.refill)
     expect(onCommand(newSave(1), 1, special(), 'flip', never).reply).toBe(dm.replies.flip)
     expect(onCommand(newSave(1), 1, special(), 'dex', never).reply!.includes(dm.dexTitle)).toBe(true)
-    expect(text(bandSegments(newSave(1), special(), 1)).includes(dm.band.title)).toBe(true)
+    expect(text(bandSegments(newSave(1), special(), 1)).includes(dm.band.flavor)).toBe(true)
   })
 })
 

@@ -86,11 +86,12 @@ const sep = (): Seg => ({ text: T().separator, dim: true, sep: true })
 
 export function bandSegments(s: Save, t: LocalTime, now: number): Seg[] {
   if (isSpecialDay(t)) {
+    // The human in the pot: its number and progress, then its broth (the hint goes first when narrow)
     const b = specialBand(s, t)
     return [
-      { text: ` ${b.icon}${b.face}  ${b.title}` },
+      { text: ` ${b.icon}${b.face}  ${b.who} ${bar(b.human, 10)} ${Math.round(b.human)}%` },
       sep(),
-      { text: `${b.bar} ${bar(b.human, 10)} ${Math.round(b.human)}%` },
+      { text: `${T().broth} ${bar(b.broth, 5)}`, keep: 1 },
       sep(),
       { text: b.hint, dim: true },
     ]

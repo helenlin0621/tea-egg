@@ -40,8 +40,16 @@ export type Clocks = {
 export type DateModeYear = {
   seen: boolean
   revealed: boolean
-  human: number
+  human: number // no longer used (progress follows prompts now); kept so older saves still read
   lastToast: Record<string, number>
+  // Missing in older saves: no prompts yet, broth 100, mood 70, no peek drawn
+  prompts?: number // prompts sent that day; every humanPrompts of them marinate one human
+  peekAt?: number // the host peeks in on the first prompt at or after this
+  broth?: number // the human's, like the egg's (0-100)
+  mood?: number
+  brothMs?: number
+  moodMs?: number
+  quietTurn?: boolean // a human was just done: the turn that prompt started skips its usual line
 }
 
 // A 'timed' special date (dates.ts), one per year. idle: the day came, no prompt yet; run: an ask counting down from
