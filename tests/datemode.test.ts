@@ -1,6 +1,8 @@
 import { test, expect } from 'claude-code/testing'
 import { decodeSpoilers } from '../hooks/spoilers'
-import { isSpecialDay, specialEvent, specialMakeup, specialSeen, specialTurn } from '../hooks/datemode'
+import { FIRST_ART, isSpecialDay, specialBand, specialEvent, specialMakeup, specialSeen, specialTurn } from '../hooks/datemode'
+import { dexArt, eggArt, panelLines } from '../hooks/panel'
+import { bar } from '../hooks/view'
 import { newSave } from '../hooks/model'
 import type { LocalTime } from '../hooks/clock'
 import type { DateModeYear } from '../types'
@@ -81,4 +83,18 @@ test('Special-date mode: can be earned again every year', async () => {
   const nextYear = { ...day(0, dm().revealHour), year: 2028, date: `2028-${pad(dm().month)}-${pad(dm().day)}` }
   s = specialTurn(s, T + 400 * 86_400_000, nextYear, first).save
   expect(s.dex[dm().prize]).toBe(2)
+})
+
+test('Special-date mode: the pane shows the stand-in picture and the band\'s title, progress and hint, not the egg\'s stats', async () => {
+  const t = day(0, 10)
+  const s = specialTurn(newSave(T), T, t, first).save
+  for (const surface of ['desktop', 'terminal']) {
+    expect(eggArt(s, t, T, surface, 80)).toEqual(dexArt(FIRST_ART, true, surface))
+  }
+  const b = specialBand(s, t)
+  expect(panelLines(s, t, T)).toEqual([`${b.title}  ${b.face}`, `${b.bar} ${bar(b.human, 10)} ${Math.round(b.human)}%`, b.hint])
+  // The next day the egg is back
+  const next = day(1, 10)
+  expect(eggArt(s, next, T, 'desktop', 80)).not.toEqual(dexArt(FIRST_ART, true, 'desktop'))
+  expect(panelLines(s, next, T)[1]).toContain(`${Math.floor(s.egg.progress)}%`)
 })

@@ -25,6 +25,8 @@ function isAfterSpecialDay(t: LocalTime): boolean {
 }
 
 export const FIRST = 'd1'
+// The dex picture the pane shows instead of the paused egg on this day
+export const FIRST_ART = 'x0'
 const keyOf = (year: number) => `${FIRST}:${year}`
 
 export function yearOf(s: Save, year: number): DateModeYear {

@@ -1,5 +1,6 @@
 import type { Save } from '../types'
 import type { LocalTime } from './clock'
+import { FIRST_ART, isSpecialDay, specialBand } from './datemode'
 import { dateArt, dateLook, timedBand } from './dates'
 import { compose, rasterCells, svgSource, SIZE, type Layer } from './pixels'
 import { decodeSpoilers } from './spoilers'
@@ -86,6 +87,11 @@ function fitWidth(text: string, cols: number): string {
 
 export function eggArt(s: Save, t: LocalTime, now: number, surface: string, columns: number): Art {
   const tooNarrow = surface === 'terminal' && columns < SIZE
+  // The first special date: the egg is paused all day, and a stand-in takes its place
+  if (isSpecialDay(t) && !tooNarrow) {
+    const stand = dexArt(FIRST_ART, true, surface)
+    if (stand) return stand
+  }
   const prize = dateArt(s, t, now)?.prize
   if (prize !== undefined && !tooNarrow) {
     const icon = dexArt(prize, true, surface)
@@ -157,6 +163,11 @@ export function dexArt(id: string, owned: boolean, surface: string): Art | null 
 }
 
 export function panelLines(s: Save, t: LocalTime, now: number): string[] {
+  // The first special date: the band's title, progress and hint (the paused egg's stats stay hidden)
+  if (isSpecialDay(t)) {
+    const b = specialBand(s, t)
+    return [`${b.title}  ${b.face}`, `${b.bar} ${bar(b.human, 10)} ${Math.round(b.human)}%`, b.hint]
+  }
   // A timed special date: the egg is paused; show the ask's countdown and the count instead of its stats.
   // The countdown line keeps its emoji right of the digits: it changes every second (see bandSegments)
   const timed = timedBand(s, t, now)
