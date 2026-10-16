@@ -103,7 +103,9 @@ export function specialPrompt(prev: Save, now: number, t: LocalTime, rng: () => 
   y.seen = true
   y.prompts = (y.prompts ?? 0) + 1
   if (y.prompts % dm.humanPrompts === 0) {
-    step.effects.push({ kind: 'toast', text: fill(dm.lines.harvest, { n: String(y.prompts / dm.humanPrompts) }) })
+    const n = y.prompts / dm.humanPrompts
+    step.effects.push({ kind: 'toast', text: fill(dm.lines.harvest, { n: String(n) }) })
+    step.effects.push({ kind: 'toast', text: fill(dm.lines.next, { n: String(n + 1) }) })
     y.broth = 100
     y.mood = 70
     y.brothMs = 0

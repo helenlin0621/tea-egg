@@ -134,6 +134,7 @@ test('Special-date human: done after the set number of prompts, then the next on
   expect(specialBand(almost.save, day(0, 10)).who).toContain('#1')
   const one = prompts(almost.save, 1, T + n * 1000)
   expect(one.effects[0]).toBe(harvest(1))
+  expect(one.effects[1]).toBe(fill(dm().lines.next, { n: '2' }))
   const b = specialBand(one.save, day(0, 10))
   expect(b.who).toContain('#2')
   expect(b.human).toBe(0)
