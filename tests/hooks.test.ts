@@ -35,7 +35,7 @@ async function saved($: { command: { run: (i: { command: string; args: string })
 }
 type SaveValue = {
   egg: { no: number; progress: number; record: { sessionCount: number } }
-  dateMode: Record<string, { human: number }>
+  dateMode: Record<string, { human: number; prompts?: number }>
 }
 
 test('Observing Bash: the result is returned unchanged and not blocked', OPTS, async ($, on) => {
@@ -180,12 +180,14 @@ test('Special-date mode: the fake-date env var takes effect; the real egg is unt
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
   mock.env(on, { ...ZH, TEA_EGG_FAKE_DATE: `2027-${pad(dm.month)}-${pad(dm.day)}T10:00` })
   base(on)
+  on('prompt.submit', (_, e) => ({ text: e.text }) as never)
   await $.session.start(START)
   const before = (await saved($)).egg
+  await $.prompt.submit({ text: 'hi' } as never)
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
   const after = (await saved($))
   expect(after.egg).toEqual(before)
-  expect(after.dateMode['d1:2027']!.human).toBe(dm.humanStep)
+  expect(after.dateMode['d1:2027']!.prompts).toBe(1)
 })
 
 const SDK_START = { cwd: '.', surface: null, isInteractive: false } as const

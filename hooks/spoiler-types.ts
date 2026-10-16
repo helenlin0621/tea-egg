@@ -20,11 +20,23 @@ export type DateMode = {
   month: number
   day: number
   revealHour: number
-  humanStep: number
+  humanPrompts: number // prompts that marinate one human; the next one starts at 0
+  peekMs: [number, number] // the host peeks in on the first prompt after this long (drawn at random) since the last time
   prize: string
   throttleMs: number
-  band: { icon: string; face: string; title: string; bar: string; hints: string[] }
+  band: {
+    icon: string
+    face: string
+    title: string
+    bar: string
+    hints: string[]
+    who: string // {n}
+    flavor: string
+    faces: { happy: string; bored: string; worried: string } // by the human's mood and broth
+    lowHint: string
+  }
   dexTitle: string
+  dexCount: string // {n}
   replies: { refill: string; flip: string }
   lines: {
     turn: string[]
@@ -33,6 +45,9 @@ export type DateMode = {
     danger: string[]
     reveal: string
     makeup: string
+    harvest: string // {n}
+    peek: { water: string; flip: string }
+    dry: BySurface
   }
 }
 

@@ -414,7 +414,7 @@ export const register: Register = on => {
       if (interactive) {
         await withUse($, usePrompt)
         const terminal = await hasTerminal($)
-        const step = await mutate(ioOf($), (s, at) => onPrompt(s, at, localNow(at), terminal))
+        const step = await mutate(ioOf($), (s, at) => onPrompt(s, at, localNow(at), terminal, rng))
         await armCountdown($, step.save)
       }
     } catch {
@@ -439,7 +439,8 @@ export const register: Register = on => {
       if (interactive && e.agentId === undefined && e.reason !== 'error') {
         const turnWaits = waits
         waits = []
-        await withUse($, (s, use, at, t, tag) => useTurn(s, use, at, t, tag, turnWaits), (s, at) => onTurn(s, at, localNow(at), rng))
+        const terminal = await hasTerminal($)
+        await withUse($, (s, use, at, t, tag) => useTurn(s, use, at, t, tag, turnWaits, terminal), (s, at) => onTurn(s, at, localNow(at), rng))
       }
     } catch {
       // Ignore silently

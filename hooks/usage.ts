@@ -1,7 +1,7 @@
 import type { Save } from '../types'
 import type { LocalTime } from './clock'
-import { isPausedDay } from './datemode'
-import { useBroth, type Effect } from './engine'
+import { dryLine, humanBroth, isPausedDay, isSpecialDay } from './datemode'
+import { RULES, uncovered, useBroth, type Effect } from './engine'
 import { noteUse } from './multi'
 
 // Session length = time actually in use, not time the program stays open.
@@ -75,13 +75,15 @@ export function withoutWaits(from: number, to: number, waits: readonly Wait[]): 
 
 // prompt.submit: start a new segment after a long break, and count this session toward the egg in the pot once
 export function usePrompt(prev: Save, prevUse: SessionUse, now: number, t: LocalTime, _tag = ''): UseStep {
-  if (isPausedDay(t)) return { save: prev, use: prevUse, effects: [] }
+  // The first special date keeps the segments going for the human's broth (useTurn); the egg's records stay as they are
+  const human = isSpecialDay(t)
+  if (isPausedDay(t) && !human) return { save: prev, use: prevUse, effects: [] }
   const save = structuredClone(prev)
   const use = { ...prevUse }
   const last = lastActive(use)
   if (last === null || now - last >= SEGMENT_GAP_MS) use.segmentStart = now
   use.lastPromptAt = now
-  if (use.countedFor !== save.egg.no) {
+  if (!human && use.countedFor !== save.egg.no) {
     save.egg.record.sessionCount += 1
     use.countedFor = save.egg.no
   }
@@ -90,9 +92,19 @@ export function usePrompt(prev: Save, prevUse: SessionUse, now: number, t: Local
 
 // turn.complete: add the minutes since the segment was last active to the egg in the pot, use up broth for them,
 // and note them for this session (tag) so overlaps with other sessions can be found (multi.ts). Time spent waiting
-// for the person during the turn (waits) is left out of all three
-export function useTurn(prev: Save, prevUse: SessionUse, now: number, t: LocalTime, tag = '', waits: readonly Wait[] = []): UseStep {
-  if (isPausedDay(t)) return { save: prev, use: prevUse, effects: [] }
+// for the person during the turn (waits) is left out of all three. On the first special date the time uses up the
+// human's broth instead (terminal: the dry toast mentions the fallback command), and the egg's records stay as they are
+export function useTurn(
+  prev: Save,
+  prevUse: SessionUse,
+  now: number,
+  t: LocalTime,
+  tag = '',
+  waits: readonly Wait[] = [],
+  terminal = false,
+): UseStep {
+  const human = isSpecialDay(t)
+  if (isPausedDay(t) && !human) return { save: prev, use: prevUse, effects: [] }
   const save = structuredClone(prev)
   const use = { ...prevUse }
   const effects: Effect[] = []
@@ -104,6 +116,12 @@ export function useTurn(prev: Save, prevUse: SessionUse, now: number, t: LocalTi
     use.segmentStart = now
   } else {
     for (const [a, b] of withoutWaits(last, now, waits)) {
+      if (human) {
+        const r = uncovered(save.clocks.usedSpans ?? [], a, b)
+        save.clocks.usedSpans = r.spans
+        if (humanBroth(save, t, r.ms, RULES.brothStepMs, RULES.brothStep)) effects.push({ kind: 'toast', text: dryLine(terminal) })
+        continue
+      }
       const minutes = (b - a) / MIN
       save.egg.record.sessionMinutes += minutes
       use.minutes += minutes
