@@ -61,10 +61,11 @@ The language is picked when a session starts. Eggs you already have keep their n
 
 | Network | Runs programs | Reads/writes files | Calls AI | Sends data | Blocks or changes commands |
 |---|---|---|---|---|---|
-| No | No | No | No | No | No |
+| No | No | Reads its own saves only | No | No | No |
 
 - The Mod only "looks at" the text of Bash/PowerShell commands and whether they succeeded, to tell whether you ran tests or a dangerous command. The full list of patterns is public in `hooks/detect.ts`.
 - All data stays in the local storage Claude Code sets aside for this Mod.
+- The only files it reads are the saves named `tea-egg_*.json` in that storage (`~/.claude/plugins/store/`): each way of loading the Mod keeps its own, and they are read at startup to notice you have progress in another one and ask whether to sync. It reads no other file and writes none directly.
 - The dex contents are encoded to avoid spoilers; see the note at the top of `hooks/spoilers.ts`.
 
 ## License

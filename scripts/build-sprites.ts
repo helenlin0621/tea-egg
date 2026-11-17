@@ -661,7 +661,14 @@ function readNative(file: string): Img | null {
 
 function main(argv: string[]): number {
   const at = argv.indexOf('--source')
-  const src = resolve(ROOT, at >= 0 && argv[at + 1] ? argv[at + 1]! : 'art-source')
+  const custom = at >= 0 && !!argv[at + 1]
+  const src = resolve(ROOT, custom ? argv[at + 1]! : 'art-source')
+  // A build from another source (the fake sheets of `npm run test-sheet`) must not replace the real output:
+  // hooks/sprites.ts is what ships, and the encoded sprites in art-build/ exist nowhere else but the private backup
+  const outHooks = custom ? join(ROOT, 'art-build', 'test-out', 'hooks') : join(ROOT, 'hooks')
+  const outBuild = custom ? join(ROOT, 'art-build', 'test-out') : join(ROOT, 'art-build')
+  mkdirSync(outBuild, { recursive: true })
+  mkdirSync(outHooks, { recursive: true })
   const manifest = JSON.parse(readFileSync(join(src, 'manifest.json'), 'utf8')) as Manifest
   const images = new Map<string, Img>()
   const spoilerNames = new Set<string>()
@@ -779,7 +786,7 @@ function main(argv: string[]): number {
     layers: Object.fromEntries([...layerPalettes].filter(([g]) => secretGroups.has(g))),
   }
   writeTs(
-    join(ROOT, 'hooks', 'sprites.ts'),
+    join(outHooks, 'sprites.ts'),
     palette,
     iconPalette,
     new Map([...ownPalettes].filter(([n]) => !isSecret(n))),
@@ -788,18 +795,18 @@ function main(argv: string[]): number {
     pub,
     manifest.faceBox ?? null,
   )
-  mkdirSync(join(ROOT, 'art-build'), { recursive: true })
-  writeFileSync(join(ROOT, 'art-build', 'spoiler_sprites.json'), JSON.stringify(secret), 'utf8')
-  writeFileSync(join(ROOT, 'art-build', 'spoiler_palettes.json'), JSON.stringify(secretPalettes), 'utf8')
+  writeFileSync(join(outBuild, 'spoiler_sprites.json'), JSON.stringify(secret), 'utf8')
+  writeFileSync(join(outBuild, 'spoiler_palettes.json'), JSON.stringify(secretPalettes), 'utf8')
   const paletteOf = (n: string) =>
     ownPalettes.get(n) ?? (layerGroup.has(n) ? layerPalettes.get(layerGroup.get(n)!)! : iconNames.has(n) ? iconPalette : palette)
-  writePreview(join(ROOT, 'art-build', 'preview.png'), paletteOf, pub)
-  writeTerminalPngs(join(ROOT, 'art-build', 'terminal'), paletteOf, grids)
+  writePreview(join(outBuild, 'preview.png'), paletteOf, pub)
+  writeTerminalPngs(join(outBuild, 'terminal'), paletteOf, grids)
   const hdB64 = new Map([...hd].map(([n, img]) => [n, pngBase64(img)] as const))
-  writeHdTs(join(ROOT, 'hooks', 'sprites-hd.ts'), new Map([...hdB64].filter(([n]) => !spoilerNames.has(n))))
-  writeFileSync(join(ROOT, 'art-build', 'spoiler_sprites_hd.json'), JSON.stringify(Object.fromEntries([...hdB64].filter(([n]) => spoilerNames.has(n)))), 'utf8')
-  writeHdPreview(join(ROOT, 'art-build', 'preview-hd.png'), hd)
+  writeHdTs(join(outHooks, 'sprites-hd.ts'), new Map([...hdB64].filter(([n]) => !spoilerNames.has(n))))
+  writeFileSync(join(outBuild, 'spoiler_sprites_hd.json'), JSON.stringify(Object.fromEntries([...hdB64].filter(([n]) => spoilerNames.has(n)))), 'utf8')
+  writeHdPreview(join(outBuild, 'preview-hd.png'), hd)
   console.log(`Palette ${palette.length} colors (icons ${iconPalette.length}, ${ownPalettes.size} with their own); ${pub.size} public (${hd.size} HD), ${Object.keys(secret).length} encoded`)
+  if (custom) console.log(`Built from ${src}: output is in art-build/test-out/, the real files are untouched`)
   return 0
 }
 

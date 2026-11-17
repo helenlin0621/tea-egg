@@ -85,8 +85,23 @@ async function sessionIdOf($: EngineInterface): Promise<string | null> {
   }
 }
 
+// Two hooks of one session can overlap (a queued message goes out the moment a turn ends). Each reads the usage
+// record before the save's queue and writes it after, so the later write would put an old lastTurnEnd back and the
+// same minutes would be counted twice. One at a time instead
+let useChain: Promise<unknown> = Promise.resolve()
+
+function withUse(
+  $: EngineInterface,
+  track: (s: Save, use: SessionUse, at: number, t: LocalTime, tag: string) => UseStep,
+  rest?: (s: Save, at: number) => Step,
+): Promise<void> {
+  const run = useChain.then(() => withUseNow($, track, rest))
+  useChain = run.catch(() => undefined)
+  return run
+}
+
 // Update this session's usage record and the save together; without a session id, run the rest alone
-async function withUse(
+async function withUseNow(
   $: EngineInterface,
   track: (s: Save, use: SessionUse, at: number, t: LocalTime, tag: string) => UseStep,
   rest: (s: Save, at: number) => Step = s => ({ save: s, effects: [] }),

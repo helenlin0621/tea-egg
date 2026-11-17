@@ -27,6 +27,12 @@ if (!existsSync(GIT_DIR)) {
 }
 
 const present = PATHS.filter(p => existsSync(join(ROOT, p)))
+// With none of them here the pathspec would be the excludes alone, which git reads as "everything": the whole
+// folder (node_modules included) would go into the private repo, and its real files would be committed as deleted
+if (present.length === 0) {
+  console.error('None of the private files are in this folder, so there is nothing to back up. Restore them first.')
+  process.exit(1)
+}
 // -f because the public .gitignore lists exactly these files; -A also records deletions
 git('add', '-f', '-A', '--', ...present, ...SKIP)
 const staged = git('diff', '--cached', '--name-status')

@@ -3,7 +3,7 @@
 // Usage: npm run encode               generate the file
 //        npm run encode -- --check    only check that hooks/spoilers.ts matches the source
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -51,10 +51,15 @@ function sortDeep(value: unknown): unknown {
 function payload(): Record<string, unknown> {
   const data = JSON.parse(readFileSync(SOURCE, 'utf8')) as Record<string, unknown>
   delete data.guard
-  if (existsSync(SPRITES)) data.sprites = JSON.parse(readFileSync(SPRITES, 'utf8'))
-  data.sprites ??= {}
-  data.spritesHd = existsSync(SPRITES_HD) ? JSON.parse(readFileSync(SPRITES_HD, 'utf8')) : {}
-  if (existsSync(PALETTES)) data.palettes = JSON.parse(readFileSync(PALETTES, 'utf8'))
+  // Without the built art this would write a spoilers.ts with no pictures in it, and --check would then call that
+  // empty file correct. art-build/ is not in the public repo, so a fresh copy has none until `npm run sprites`
+  const missing = [SPRITES, SPRITES_HD, PALETTES].filter(f => !existsSync(f))
+  if (missing.length > 0) {
+    throw new Error(`Missing ${missing.map(f => basename(f)).join(', ')} in art-build/. Run \`npm run sprites\` first (or restore art-build/ from the private backup).`)
+  }
+  data.sprites = JSON.parse(readFileSync(SPRITES, 'utf8'))
+  data.spritesHd = JSON.parse(readFileSync(SPRITES_HD, 'utf8'))
+  data.palettes = JSON.parse(readFileSync(PALETTES, 'utf8'))
   return data
 }
 
@@ -67,7 +72,13 @@ function render(data: Record<string, unknown>): string {
 }
 
 function main(argv: string[]): number {
-  const rendered = render(payload())
+  let rendered: string
+  try {
+    rendered = render(payload())
+  } catch (e) {
+    console.error(`✗ ${(e as Error).message}`)
+    return 1
+  }
   if (argv.includes('--check')) {
     const same = existsSync(OUT) && readFileSync(OUT, 'utf8') === rendered
     console.log(same ? '✓ spoilers.ts matches the source' : '✗ spoilers.ts is stale: run npm run encode again')
