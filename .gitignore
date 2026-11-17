@@ -11,6 +11,9 @@ docs/superpowers/
 # Second git that backs the files above up to a private repo (npm run backup)
 .git-private/
 
+# Personal usage data written by `npm run profile` into the cwd
+tea-egg-profile.json
+
 # Misc
 .claude-plugin/types/
 # Written by Claude Code when the mod is loaded with --plugin-dir (extends .claude-plugin/types/tsconfig.json)

@@ -32,6 +32,15 @@ test('Opening a session resets the active bucket', async () => {
   expect(r.clocks.bucketActive).toBe(false)
 })
 
+test('Opening a second session keeps the 10-minute bucket another session is filling', async () => {
+  const s = newSave(1)
+  s.clocks.bucketStart = 5_000_000 - 3 * 60_000
+  s.clocks.bucketActive = true
+  const r = onSessionOpen(s, 5_000_000, at('2026-10-07'), true).save
+  expect(r.clocks.bucketStart).toBe(5_000_000 - 3 * 60_000)
+  expect(r.clocks.bucketActive).toBe(true)
+})
+
 test('A turn that brings flavor to 100 harvests the egg', async () => {
   const s = newSave(ms('2026-10-07'))
   s.egg.progress = 99

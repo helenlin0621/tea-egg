@@ -8,6 +8,15 @@ import { fill, T } from './text'
 
 export type SyncOffer = { save: Save; fingerprint: string }
 
+// The tag every store file of one load identity ends with: the first 12 hex digits of the sha256 of its name, which is
+// `<plugin>@<marketplace>` for an installed plugin and `<plugin>@inline` for one loaded from a folder. The marketplace
+// is the folder above the plugin's own under plugins/cache
+export async function identityTag(plugin: string, root: string): Promise<string> {
+  const market = /\/plugins\/cache\/([^/]+)\/[^/]+\/[^/]+\/?$/.exec(root.replaceAll('\\', '/'))?.[1] ?? 'inline'
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${plugin}@${market}`))
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 12)
+}
+
 // A short, stable id of a save's content, so a declined offer is not asked again until that save changes
 export function fingerprint(s: unknown): string {
   const text = JSON.stringify(s) ?? ''

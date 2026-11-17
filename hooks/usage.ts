@@ -73,6 +73,24 @@ export function withoutWaits(from: number, to: number, waits: readonly Wait[]): 
   return pieces
 }
 
+// [from, to] cut at each local midnight, each piece with its own day: a stretch that crosses midnight belongs to both
+// days (the egg may be paused on one of them, and the several-session minutes are counted per day). No `at`: one piece
+export function splitByDay(from: number, to: number, t: LocalTime, at?: (ms: number) => LocalTime): [from: number, to: number, t: LocalTime][] {
+  if (!at) return [[from, to, t]]
+  const out: [number, number, LocalTime][] = []
+  let a = from
+  for (;;) {
+    const ta = at(a)
+    const midnight = a - (a % MIN) + ((24 - ta.hour) * 60 - ta.minute) * MIN
+    if (midnight >= to) {
+      out.push([a, to, ta])
+      return out
+    }
+    out.push([a, midnight, ta])
+    a = midnight
+  }
+}
+
 // prompt.submit: start a new segment after a long break, and count this session toward the egg in the pot once
 export function usePrompt(prev: Save, prevUse: SessionUse, now: number, t: LocalTime, _tag = ''): UseStep {
   // The first special date keeps the segments going for the human's broth (useTurn); the egg's records stay as they are
@@ -102,31 +120,36 @@ export function useTurn(
   tag = '',
   waits: readonly Wait[] = [],
   terminal = false,
+  at?: (ms: number) => LocalTime,
 ): UseStep {
-  const human = isSpecialDay(t)
-  if (isPausedDay(t) && !human) return { save: prev, use: prevUse, effects: [] }
+  const last = lastActive(prevUse)
+  // The egg is paused all day and nothing from an earlier day is waiting to be counted. Otherwise a turn that began
+  // before midnight still has its first part to count and lastTurnEnd must move, or the next turn counts it all again
+  const startedToday = last === null || !at || at(last).date === t.date
+  if (isPausedDay(t) && !isSpecialDay(t) && startedToday) return { save: prev, use: prevUse, effects: [] }
   const save = structuredClone(prev)
   const use = { ...prevUse }
   const effects: Effect[] = []
-  const last = lastActive(use)
   const prompted = use.lastPromptAt !== null && (use.lastTurnEnd === null || use.lastPromptAt > use.lastTurnEnd)
   // A turn with no prompt before it opens a segment here and adds nothing yet, unless it follows the last turn
   // closely. A turn that a prompt started always counts in full, however long it ran
   if (last === null || (!prompted && now - last >= SEGMENT_GAP_MS)) {
     use.segmentStart = now
   } else {
-    for (const [a, b] of withoutWaits(last, now, waits)) {
+    for (const [a, b, day] of withoutWaits(last, now, waits).flatMap(([x, y]) => splitByDay(x, y, t, at))) {
+      const human = isSpecialDay(day)
+      if (isPausedDay(day) && !human) continue
       if (human) {
         const r = uncovered(save.clocks.usedSpans ?? [], a, b)
         save.clocks.usedSpans = r.spans
-        if (humanBroth(save, t, r.ms, RULES.brothStepMs, RULES.brothStep)) effects.push({ kind: 'toast', text: dryLine(terminal) })
+        if (humanBroth(save, day, r.ms, RULES.brothStepMs, RULES.brothStep)) effects.push({ kind: 'toast', text: dryLine(terminal) })
         continue
       }
       const minutes = (b - a) / MIN
       save.egg.record.sessionMinutes += minutes
       use.minutes += minutes
       useBroth(save, a, b, effects)
-      noteUse(save, tag, a, b, t)
+      noteUse(save, tag, a, b, day)
     }
   }
   use.lastTurnEnd = now

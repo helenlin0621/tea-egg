@@ -16,9 +16,10 @@ const SOURCE = join(ROOT, 'spoilers.source.json')
 const NEVER_TRACK = ['tea-egg-design.md', 'spoilers.source.json']
 const NEVER_TRACK_DIRS = ['art-source/', 'art-build/', 'docs/superpowers/', '.superpowers/', '.git-private/', 'node_modules/']
 const NEVER_TRACK_EXT = ['.png']
+// Written to the cwd by `npm run profile`; holds personal usage data
+const NEVER_TRACK_FILES = ['tea-egg-profile.json']
 // The encoded spoiler files themselves aren't scanned (their content is base64)
 const SKIP_CONTENT = ['hooks/spoilers.ts', 'hooks/sprites-hd.ts']
-const SCISSORS = '# ------------------------ >8'
 
 type Guard = { words: string[]; patterns: RegExp[]; invalid: string[] }
 
@@ -55,13 +56,35 @@ function scanText(label: string, text: string, guard: Guard): string[] {
   return problems
 }
 
+// core.ignorecase=true on Windows: Art-Build/x.json and Tea-Egg-Design.md are the same files as the lowercase ones
 function isBadPath(path: string): boolean {
-  const base = path.split('/').pop() ?? path
+  const low = path.toLowerCase()
+  const base = low.split('/').pop() ?? low
   return (
     NEVER_TRACK.includes(base) ||
-    NEVER_TRACK_DIRS.some(dir => path.startsWith(dir) || path.includes(`/${dir}`)) ||
-    NEVER_TRACK_EXT.some(ext => path.toLowerCase().endsWith(ext))
+    NEVER_TRACK_FILES.includes(base) ||
+    NEVER_TRACK_DIRS.some(dir => low.startsWith(dir) || low.includes(`/${dir}`)) ||
+    NEVER_TRACK_EXT.some(ext => low.endsWith(ext))
   )
+}
+
+// UTF-16 text (Notepad, PowerShell 5.1 Out-File) is full of NULs but is not binary; decode it so it still gets scanned.
+// Without a BOM, ASCII-heavy UTF-16 shows up as every second byte being 0.
+function decodeText(data: Buffer): string | null {
+  if (data[0] === 0xff && data[1] === 0xfe) return data.subarray(2).toString('utf16le')
+  if (data[0] === 0xfe && data[1] === 0xff) return Buffer.from(data.subarray(2)).swap16().toString('utf16le')
+  const head = data.subarray(0, 4096)
+  if (!head.includes(0)) return data.toString('utf8')
+  const pairs = head.length >> 1
+  let evenZero = 0
+  let oddZero = 0
+  for (let i = 0; i + 1 < head.length; i += 2) {
+    if (head[i] === 0) evenZero++
+    if (head[i + 1] === 0) oddZero++
+  }
+  if (oddZero > pairs * 0.3 && evenZero < pairs * 0.05) return data.toString('utf16le')
+  if (evenZero > pairs * 0.3 && oddZero < pairs * 0.05) return Buffer.from(data).swap16().toString('utf16le')
+  return null
 }
 
 function checkFiles(paths: string[], read: (path: string) => Buffer, guard: Guard): string[] {
@@ -83,20 +106,18 @@ function checkFiles(paths: string[], read: (path: string) => Buffer, guard: Guar
       problems.push(`${label}: could not read it; please check manually`)
       return
     }
-    if (data.subarray(0, 4096).includes(0)) return
-    problems.push(...scanText(label, data.toString('utf8'), guard))
+    const text = decodeText(data)
+    if (text === null) return
+    problems.push(...scanText(label, text, guard))
   })
   return problems
 }
 
-// Commit message: drop # comment lines and everything after the scissors line (the diff from git commit -v)
+// Commit message: scan every line. `git commit -m "#12 ..."` keeps the # line in history (default cleanup only strips
+// comments in the editor flow), and with -m the scissors line isn't special either, so nothing may be skipped.
+// A `git commit -v` diff below the scissors line is scanned too; it can only hit words the staged-file check already blocks.
 function messageBody(text: string): string {
-  const lines: string[] = []
-  for (const line of text.split(/\r?\n/)) {
-    if (line.startsWith(SCISSORS)) break
-    if (!line.startsWith('#')) lines.push(line)
-  }
-  return lines.join('\n')
+  return text
 }
 
 function main(argv: string[]): number {

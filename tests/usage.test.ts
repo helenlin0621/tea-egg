@@ -4,7 +4,8 @@ import { onTick, onTurn } from '../hooks/flow'
 import { newSave } from '../hooks/model'
 import { newUse, parseUse, usePrompt, useStale, useTurn, withoutWaits, type SessionUse } from '../hooks/usage'
 import type { Save } from '../types'
-import { at } from './helpers'
+import { localTime } from '../hooks/clock'
+import { at, ms as msAt, TAIPEI } from './helpers'
 
 const MIN = 60_000
 const T0 = Date.UTC(2026, 9, 7, 2)
@@ -160,4 +161,47 @@ test('Waits: cut out of a stretch, clipped to it, and overlapping waits are fine
   expect(withoutWaits(0, 100, [[-50, 30], [90, 500]])).toEqual([[30, 90]])
   expect(withoutWaits(0, 100, [[10, 40], [30, 60]])).toEqual([[0, 10], [60, 100]])
   expect(withoutWaits(0, 100, [[0, 100]])).toEqual([])
+})
+
+// ---- A stretch of use that crosses local midnight ----
+
+const dayBefore = (d: { month: number; day: number }, year: number) => {
+  const u = new Date(Date.UTC(year, d.month - 1, d.day - 1))
+  return `${u.getUTCFullYear()}-${String(u.getUTCMonth() + 1).padStart(2, '0')}-${String(u.getUTCDate()).padStart(2, '0')}`
+}
+const onDay = (ms: number) => localTime(ms, TAIPEI)
+
+test('Usage: a turn that ends on a paused day still counts its part before midnight and moves lastTurnEnd', async () => {
+  const timed = Object.values(decodeSpoilers().dates).find(d => d.kind === 'timed')!
+  const eve = dayBefore(timed, 2027)
+  const start = msAt(eve, 23, 30)
+  const end = start + 60 * MIN // 00:30 on the paused day
+  const p = usePrompt(newSave(start), newUse(), start, at(eve, 23, 30))
+  const r = useTurn(p.save, p.use, end, onDay(end), 'A', [], false, onDay)
+  expect(r.save.egg.record.sessionMinutes).toBe(30)
+  expect(r.use.minutes).toBe(30)
+  expect(r.use.lastTurnEnd).toBe(end)
+  // A turn that stays inside the paused day is still ignored altogether
+  const again = useTurn(r.save, r.use, end + 10 * MIN, onDay(end), 'A', [], false, onDay)
+  expect(again.use.lastTurnEnd).toBe(end)
+})
+
+test('Usage: each side of midnight counts toward its own day for the several-session minutes', async () => {
+  const eve = '2026-10-07'
+  const a0 = msAt(eve, 23, 30)
+  const play = (steps: [string, 'p' | 't', number][]) => {
+    let save = newSave(a0)
+    const uses: Record<string, SessionUse> = {}
+    for (const [who, kind, min] of steps) {
+      const ms = a0 + min * MIN
+      const r = (kind === 'p' ? usePrompt : useTurn)(save, uses[who] ?? newUse(), ms, onDay(ms), who, ...(kind === 't' ? [[], false, onDay] as const : []))
+      save = r.save
+      uses[who] = r.use
+    }
+    return save
+  }
+  // A is in use 23:30–00:30, B 23:40–00:20: 20 minutes of overlap on each day
+  const s = play([['A', 'p', 0], ['B', 'p', 10], ['B', 't', 50], ['A', 't', 60]])
+  expect(s.egg.record.multiMinutes).toEqual({ '2026-10-07': 20, '2026-10-08': 20 })
+  expect(s.egg.record.sessionMinutes).toBe(60 + 40)
 })

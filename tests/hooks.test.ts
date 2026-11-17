@@ -285,3 +285,45 @@ test('Usage: a permission prompt the person leaves open is not counted as use', 
   const use = store.get(`${STORE_KEY}/session/session-1`) as { minutes: number }
   expect(use.minutes).toBe(10)
 })
+
+test('A failed activation leaves the Mod off and the next signal tries again', OPTS, async ($, on) => {
+  const store: Record<string, unknown> = {}
+  let failing = true
+  on('store.get', (_, e) => {
+    if (failing && (e as { key: string }).key === STORE_KEY) throw new Error('store unreadable')
+    return { value: store[(e as { key: string }).key] } as never
+  })
+  on('store.set', (_, e) => {
+    const { key, value } = e as { key: string; value: unknown }
+    store[key] = value
+    return { value: undefined } as never
+  })
+  mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
+  mock.env(on, ZH)
+  base(on)
+  on('session.attach', (_, e) => ({ clientId: e.clientId }))
+  await $.session.start(START)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't0', reason: 'answer' })
+  expect(store[STORE_KEY]).toBe(undefined)
+  failing = false
+  await $.session.attach(ATTACH)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect((store[STORE_KEY] as { egg: { progress: number } }).egg.progress).toBe(1)
+})
+
+test('Start and attach arriving together activate once', OPTS, async ($, on) => {
+  const toasts: string[] = []
+  mock.store(on)
+  mock.clock(on, { now: Date.UTC(2026, 9, 7, 2) })
+  mock.env(on, ZH)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('session.id', () => ({ value: 'session-1' }) as never)
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('session.attach', (_, e) => ({ clientId: e.clientId }))
+  await Promise.all([$.session.start(START), $.session.attach(ATTACH)])
+  expect(toasts.filter(t => t.startsWith('🥚 你領到了第一顆蛋')).length).toBe(1)
+})

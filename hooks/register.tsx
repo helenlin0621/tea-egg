@@ -1,10 +1,10 @@
 import { update, type EngineInterface, type Register, type Timer } from 'claude-code'
 import { localTime, parseFakeDate, systemOffset, type ClockConfig, type LocalTime } from './clock'
 import { observe, OBSERVED_TOOLS } from './detect'
-import { dateAction, paneRefillLabel, remainingMs, setRestOverride, timedNow, timedTick } from './dates'
+import { dateAction, ownsAsk, paneRefillLabel, remainingMs, setAskOwner, setRestOverride, startedAsk, timedNow, timedTick } from './dates'
 import { dexTitle, onCommand, onObserved, onPrompt, onSessionOpen, onTick, onTurn } from './flow'
 import { BAND_STORE_KEY, FAKE_STORE_KEY, STORE_KEY, SYNC_DISMISSED_KEY } from './model'
-import { compareLines, offerFor, type SyncOffer } from './sync'
+import { compareLines, identityTag, offerFor, type SyncOffer } from './sync'
 import { dexArt, eggArt, nextPreview, panelLines, PREVIEW_KEYS, PREVIEW_LABELS, previewArt, SVG_PX, type Art } from './panel'
 import { dexCaption, dexHeader } from './rules'
 import { decodeSpoilers } from './spoilers'
@@ -56,6 +56,7 @@ const ioOf = ($: EngineInterface): StoreIo => ({
     await $.store.set(storeKey(), save)
     await $.state.set(SAVE_REF, save)
   },
+  mirror: save => $.state.set(SAVE_REF, save),
   toast: (text, order) => toastAt($, text, order),
 })
 
@@ -113,9 +114,11 @@ async function withUseNow(
   }
   const key = usePrefix() + id
   const tag = id.slice(0, 8) // enough to tell sessions apart in the save
-  let use = parseUse(await $.store.get(key))
+  const before = parseUse(await $.store.get(key))
+  let use = before
+  // mutate may run this twice (another session wrote in between), so always start from the record as it was read
   await mutate(ioOf($), (s, at) => {
-    const r = track(s, use, at, localNow(at), tag)
+    const r = track(s, before, at, localNow(at), tag)
     use = r.use
     const step = rest(r.save, at)
     return { ...step, effects: [...r.effects, ...step.effects] }
@@ -162,16 +165,19 @@ async function toggleBand($: EngineInterface): Promise<boolean> {
 // This load only writes its own save; the other tea-egg store files are read so the person can choose to copy one over.
 const STORE_FILE = /^tea-egg_.+\.json$/
 
-// The real saves in every tea-egg store file (ours included; pickOther skips the one equal to ours)
+// The real saves in the tea-egg store files other than ours (pickOther still skips one equal to ours, for when ours
+// can't be recognised by name)
 async function storeFileSaves($: EngineInterface): Promise<unknown[]> {
   try {
+    // Another session rewriting our own file mid-read would look like a different save, so ours is told by its name
+    const own = await identityTag($.plugin.name, $.plugin.root)
     const configDir =
       (await $.env.get('CLAUDE_CONFIG_DIR')) ??
       `${(await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''}/.claude`
     const dir = `${configDir}/plugins/store`
     const saves: unknown[] = []
     for (const entry of await $.fs.list(dir)) {
-      if (entry.kind !== 'file' || !STORE_FILE.test(entry.name)) continue
+      if (entry.kind !== 'file' || !STORE_FILE.test(entry.name) || entry.name.endsWith(`-${own}.json`)) continue
       try {
         saves.push((JSON.parse((await $.fs.read(`${dir}/${entry.name}`)) as string) as Record<string, unknown>)[STORE_KEY])
       } catch {
@@ -297,7 +303,8 @@ async function armCountdown($: EngineInterface, save: Save): Promise<void> {
   }
   const left = remainingMs(run.spec, run.entry!, now)
   const warnIn = left - run.spec.warnSeconds * 1000
-  if (warnIn > 0 && run.entry!.warned !== true) alarms.push($.clock.after(warnIn, settleNow))
+  // Only the session that sent the prompt warns (design 14.3); the others just keep their countdown moving
+  if (warnIn > 0 && run.entry!.warned !== true && ownsAsk(run.key, run.entry!)) alarms.push($.clock.after(warnIn, settleNow))
   alarms.push($.clock.after(left + 100, settleNow))
 }
 
@@ -351,44 +358,54 @@ function watchForSurface($: EngineInterface): void {
   })
 }
 
-async function activate($: EngineInterface): Promise<void> {
-  // Claim the slot synchronously so start and attach arriving together don't activate twice
-  if (interactive) return
-  interactive = true
-  try {
-    // Also decided here in case this load never saw session.start
-    setLang(detectLang(await $.env.get('TEA_EGG_LANG')))
-    const now = await $.clock.now()
-    clock = {
-      offsetMinutes: systemOffset,
-      fake: parseFakeDate(await $.env.get('TEA_EGG_FAKE_DATE')),
-      loadedAt: now,
-    }
-    // A short rest between a timed day's asks, only with a fake date so the real save never gets one
-    const rest = Number(await $.env.get('TEA_EGG_TEST_REST'))
-    setRestOverride(clock.fake !== null && rest > 0 ? rest * 1000 : null)
-    try {
-      await findSyncOffer($, true)
-    } catch {
-      // No offer when the other saves can't be read
-    }
-    const counted = (await $.state.get(COUNTED_REF)).value === true
-    const opened = await mutate(ioOf($), (s, at) => onSessionOpen(s, at, localNow(at), !counted))
-    await armCountdown($, opened.save).catch(() => undefined)
-    if (!counted) await $.state.set(COUNTED_REF, true)
-    await pruneUse($, now).catch(() => undefined)
-    tick?.cancel()
-    tick = $.clock.every(TICK_MS, () => {
-      void mutate(ioOf($), (s, at) => onTick(s, at, localNow(at), rng))
-        .then(step => armCountdown($, step.save))
-        .catch(() => undefined)
+// start and attach arriving together share one run; a run that fails leaves `interactive` false so the next signal retries
+let activating: Promise<void> | null = null
+
+function activate($: EngineInterface): Promise<void> {
+  if (interactive) return Promise.resolve()
+  activating ??= activateNow($)
+    .catch(() => undefined) // An egg error must never affect the user
+    .finally(() => {
+      activating = null
     })
-  } catch {
-    // An egg error must never affect the user
+  return activating
+}
+
+// `interactive` opens only at the end: until the fake date and the other settings are read, a hook that came in would
+// write the real save under the real date, and a failure half way would leave the Mod on with no timer and no retry
+async function activateNow($: EngineInterface): Promise<void> {
+  // Also decided here in case this load never saw session.start
+  setLang(detectLang(await $.env.get('TEA_EGG_LANG')))
+  const now = await $.clock.now()
+  clock = {
+    offsetMinutes: systemOffset,
+    fake: parseFakeDate(await $.env.get('TEA_EGG_FAKE_DATE')),
+    loadedAt: now,
   }
+  // A short rest between a timed day's asks, only with a fake date so the real save never gets one
+  const rest = Number(await $.env.get('TEA_EGG_TEST_REST'))
+  setRestOverride(clock.fake !== null && rest > 0 ? rest * 1000 : null)
+  try {
+    await findSyncOffer($, true)
+  } catch {
+    // No offer when the other saves can't be read
+  }
+  const counted = (await $.state.get(COUNTED_REF)).value === true
+  const opened = await mutate(ioOf($), (s, at) => onSessionOpen(s, at, localNow(at), !counted))
+  await armCountdown($, opened.save).catch(() => undefined)
+  if (!counted) await $.state.set(COUNTED_REF, true)
+  await pruneUse($, now).catch(() => undefined)
+  tick?.cancel()
+  tick = $.clock.every(TICK_MS, () => {
+    void mutate(ioOf($), (s, at) => onTick(s, at, localNow(at), rng))
+      .then(step => armCountdown($, step.save))
+      .catch(() => undefined)
+  })
+  interactive = true
 }
 
 export const register: Register = on => {
+  setAskOwner(null)
   on('session.start', async ($, e, next) => {
     try {
       // Pick the language first: the command description below is already localized.
@@ -429,7 +446,12 @@ export const register: Register = on => {
       if (interactive) {
         await withUse($, usePrompt)
         const terminal = await hasTerminal($)
-        const step = await mutate(ioOf($), (s, at) => onPrompt(s, at, localNow(at), terminal, rng))
+        const step = await mutate(ioOf($), (s, at) => {
+          const r = onPrompt(s, at, localNow(at), terminal, rng)
+          const started = startedAsk(s, r.save)
+          if (started !== null) setAskOwner(started)
+          return r
+        })
         await armCountdown($, step.save)
       }
     } catch {
@@ -455,7 +477,7 @@ export const register: Register = on => {
         const turnWaits = waits
         waits = []
         const terminal = await hasTerminal($)
-        await withUse($, (s, use, at, t, tag) => useTurn(s, use, at, t, tag, turnWaits, terminal), (s, at) => onTurn(s, at, localNow(at), rng))
+        await withUse($, (s, use, at, t, tag) => useTurn(s, use, at, t, tag, turnWaits, terminal, localNow), (s, at) => onTurn(s, at, localNow(at), rng))
       }
     } catch {
       // Ignore silently

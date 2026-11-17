@@ -29,7 +29,7 @@ export function isTestCommand(cmd: string): boolean {
   })
 }
 
-// Strip heredoc bodies: from the line after <<WORD up to a line containing only WORD
+// Strip heredoc bodies: from the line after <<WORD up to a line containing only WORD (<<< is a here-string, which has no body)
 function withoutHeredocs(cmd: string): string {
   const out: string[] = []
   let end: string | null = null
@@ -39,7 +39,7 @@ function withoutHeredocs(cmd: string): string {
       continue
     }
     out.push(line)
-    const m = /<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/.exec(line)
+    const m = /(?:^|[^<])<<(?!<)-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/.exec(line)
     if (m) end = m[1]!
   }
   return out.join('\n')
@@ -310,14 +310,34 @@ export function dangerKeyword(cmd: string): string | null {
   return null
 }
 
+// A pipeline's exit code is its last command's (no pipefail), so `npm test 2>&1 | tail -30` reports success even when the
+// tests failed; then the output has to say. Markers are chosen to be rare in passing output: a count must be non-zero
+// ("0 failed" is a pass) and the line-start ones are the runners' own result lines
+const FAIL_MARKERS: readonly RegExp[] = [
+  /^\s*\(fail\)/m,
+  /^\s*(?:---\s+)?FAIL(?:ED)?\b/m,
+  /^\s*(?:test result: )?FAILED\b/m,
+  /✗|✖/,
+  /\b[1-9]\d*\s+(?:failed|failing|failures?)\b/i,
+  /\b(?:Failures|Errors|Failed):\s*[1-9]/,
+  /^\s*Failed!/m,
+  /BUILD FAILURE|\[ERROR\] Tests run:/,
+]
+
+const hasPipe = (cmd: string) => /(?:^|[^|])\|(?!\|)/.test(unquoted(withoutHeredocs(cmd)))
+
+export const outputShowsFailure = (text: string): boolean => FAIL_MARKERS.some(re => re.test(text))
+
 export type Observation = { failed: boolean; test: 'pass' | 'fail' | null; danger: string | null; caution: string | null }
 
-export function observe(tool: string, command: string, ran: { deny?: string; isError?: boolean }): Observation | null {
+export function observe(tool: string, command: string, ran: { deny?: string; isError?: boolean; text?: string }): Observation | null {
   if (ran.deny !== undefined) return null
   const failed = ran.isError === true
   const isShell = (OBSERVED_TOOLS as readonly string[]).includes(tool)
   const cmd = typeof command === 'string' ? command : ''
-  const test = isShell && isTestCommand(cmd) ? (failed ? 'fail' : 'pass') : null
+  const isTest = isShell && isTestCommand(cmd)
+  const piped = isTest && !failed && typeof ran.text === 'string' && hasPipe(cmd) && outputShowsFailure(ran.text)
+  const test = isTest ? (failed || piped ? 'fail' : 'pass') : null
   // Dangerous commands only count when they actually ran successfully (denied or failed calls don't)
   const danger = isShell && !failed ? dangerKeyword(cmd) : null
   const caution = isShell && !failed ? cautionKeyword(cmd) : null

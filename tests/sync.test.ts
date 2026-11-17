@@ -134,6 +134,17 @@ test('Confirm without yes does nothing; cancel backs out and the offer stays', a
   expect(await egg($, 'sync')).toContain('#13')
 })
 
+test('Our own store file is told by its name, so a write of ours caught mid-read is not another save', async ($, on) => {
+  const toasts: string[] = []
+  const store: Store = { [STORE_KEY]: save(4, Date.UTC(2026, 9, 14, 1)) }
+  // The file named for this load's identity (sha256 of tea-egg@inline, first 12 digits) holds a newer write of ours
+  const ownFile = 'tea-egg_inline-fabfdd1c19c2.json'
+  setup(on, store, { [ownFile]: { [STORE_KEY]: save(5, Date.UTC(2026, 9, 14, 2)) } }, toasts)
+  await $.session.start(START)
+  expect(toasts.some(t => t.includes('/egg sync'))).toBe(false)
+  expect(await egg($, 'sync')).toContain('沒有其他')
+})
+
 test('Only one save: no announcement', async ($, on) => {
   const toasts: string[] = []
   setup(on, { [STORE_KEY]: save(4, Date.UTC(2026, 9, 14, 1)) }, {}, toasts)

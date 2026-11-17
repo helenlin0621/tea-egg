@@ -378,6 +378,11 @@ function quantize(images: Map<string, Img>, paletteFrom: Map<string, Img> = imag
   return { palette, grids }
 }
 
+// File names become object keys; a name with `-`, a space or a leading digit would be a syntax error unquoted
+function tsKey(name: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name)
+}
+
 function writeTs(path: string, palette: number[], iconPalette: number[], ownPalettes: Map<string, number[]>, layerPalettes: Map<string, number[]>, layerPaletteOf: Record<string, string>, sprites: Map<string, string>, faceBox: Manifest['faceBox']): void {
   const hex = (p: number[]) => p.map(c => '0x' + c.toString(16).padStart(6, '0')).join(', ')
   const lines = [
@@ -392,11 +397,11 @@ function writeTs(path: string, palette: number[], iconPalette: number[], ownPale
     `export const ICON_PALETTE: readonly number[] = [${hex(iconPalette)}]`,
     '',
     'export const ICON_OWN_PALETTES: Readonly<Record<string, readonly number[]>> = {',
-    ...[...ownPalettes].map(([name, p]) => `  ${name}: [${hex(p)}],`),
+    ...[...ownPalettes].map(([name, p]) => `  ${tsKey(name)}: [${hex(p)}],`),
     '}',
     '',
     'export const LAYER_PALETTES: Readonly<Record<string, readonly number[]>> = {',
-    ...[...layerPalettes].map(([group, p]) => `  ${group}: [${hex(p)}],`),
+    ...[...layerPalettes].map(([group, p]) => `  ${tsKey(group)}: [${hex(p)}],`),
     '}',
     '',
     `export const LAYER_PALETTE_OF: Readonly<Record<string, string>> = ${JSON.stringify(layerPaletteOf)}`,
@@ -406,7 +411,7 @@ function writeTs(path: string, palette: number[], iconPalette: number[], ownPale
     'export const SPRITES: Readonly<Record<string, string>> = {',
   ]
   for (const [name, px] of sprites) {
-    lines.push(`  ${name}:`)
+    lines.push(`  ${tsKey(name)}:`)
     for (let i = 0; i < px.length; i += 96) lines.push(`    '${px.slice(i, i + 96)}'${i + 96 < px.length ? ' +' : ','}`)
   }
   lines.push('}')
@@ -615,7 +620,7 @@ function writeHdTs(path: string, sprites: Map<string, string>): void {
     '',
     'export const SPRITES_HD: Readonly<Record<string, string>> = {',
   ]
-  for (const [name, b64] of sprites) lines.push(`  ${name}: '${b64}',`)
+  for (const [name, b64] of sprites) lines.push(`  ${tsKey(name)}: '${b64}',`)
   lines.push('}')
   writeFileSync(path, lines.join('\n') + '\n', 'utf8')
 }
@@ -734,6 +739,10 @@ function main(argv: string[]): number {
     const img = readNative(join(layerDir, file))
     if (!img) {
       console.error(`layers/${file}: an egg layer must be ${SIZE}×${SIZE}`)
+      return 1
+    }
+    if (images.has(name)) {
+      console.error(`layers/${file}: the name "${name}" is already used by a sheet cell; rename the layer file`)
       return 1
     }
     images.set(name, img)

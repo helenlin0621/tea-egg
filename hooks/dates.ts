@@ -97,6 +97,26 @@ function endAsk(spec: TimedDate, entry: TimedEntry, at: number, answered: boolea
   entry.nextAt = at + restAfter(spec, at)
 }
 
+// The ask this session started, which is the only one it may warn about: sessions following a shared save redraw the
+// countdown but stay quiet (design 14.3). undefined = no restriction, for callers that are not a session
+let askOwner: string | null | undefined
+export function setAskOwner(id: string | null | undefined): void {
+  askOwner = id
+}
+
+const askIdOf = (key: string, entry: TimedEntry) => `${key}@${entry.startedAt}`
+
+// The id of the ask that `after` has running and `before` did not: the one a prompt just started
+export function startedAsk(before: Save, after: Save): string | null {
+  const run = running(after)
+  if (!run?.entry) return null
+  const was = running(before)
+  const id = askIdOf(run.key, run.entry)
+  return was?.entry && askIdOf(was.key, was.entry) === id ? null : id
+}
+
+export const ownsAsk = (key: string, entry: TimedEntry): boolean => askOwner === undefined || askOwner === askIdOf(key, entry)
+
 // End an ask that ran out, or warn once it is nearly over. Runs on every event (and on the ask's timers)
 function checkTimed(step: Step, now: number): void {
   const run = running(step.save)
@@ -106,7 +126,7 @@ function checkTimed(step: Step, now: number): void {
   if (left <= 0) {
     endAsk(spec, entry, (entry.startedAt ?? now) + spec.seconds * 1000, false)
     step.effects.push(toast(tally(spec, spec.lines.miss, entry.got ?? 0)))
-  } else if (left <= spec.warnSeconds * 1000 && !entry.warned) {
+  } else if (left <= spec.warnSeconds * 1000 && !entry.warned && ownsAsk(run.key, entry)) {
     entry.warned = true
     step.effects.push(toast(surfaced(spec.lines.warn, entry.terminal === true)))
   }

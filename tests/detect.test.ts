@@ -132,6 +132,31 @@ test('Heredoc bodies are not commands', async () => {
   expect(isTestCommand('cat > run.sh <<EOF\nnpm test\nEOF')).toBe(false)
 })
 
+test('A here-string is not a heredoc: later lines are still commands', async () => {
+  expect(dangerKeyword('cat <<< word\nrm -rf /')).toBe('rm -rf')
+  expect(dangerKeyword("cat <<<'x'\ngit push --force")).toBe('git push --force')
+  expect(dangerKeyword('cat <<EOF\nrm -rf /\nEOF')).toBe(null)
+})
+
+test('A piped test command takes its verdict from the output, since the pipe hides the exit code', async () => {
+  const pipe = 'npm test 2>&1 | tail -30'
+  const verdict = (command: string, text: string) => observe('Bash', command, { isError: false, text })?.test ?? null
+  expect(verdict(pipe, '(pass) a\n 1 pass\n 0 fail')).toBe('pass')
+  expect(verdict(pipe, '(pass) a\n(fail) b [1ms]\n 1 pass\n 1 fail')).toBe('fail')
+  expect(verdict(pipe, 'FAIL src/a.test.js\nTests: 1 failed, 4 passed, 5 total')).toBe('fail')
+  expect(verdict('pytest -q | tee out.txt', '=== 2 failed, 3 passed in 0.4s ===')).toBe('fail')
+  expect(verdict('go test ./... | cat', '--- FAIL: TestA (0.00s)\nFAIL')).toBe('fail')
+  expect(verdict('cargo test | tail', 'test result: FAILED. 1 passed; 1 failed')).toBe('fail')
+  expect(verdict(pipe, 'Tests: 0 failed, 5 passed, 5 total')).toBe('pass')
+  expect(verdict(pipe, 'all green, the word FAIL appears only mid-line here')).toBe('pass')
+  // Without a pipe the exit code is trusted, and a failing text alone does not turn a pass into a failure
+  expect(verdict('npm test', '(fail) b\n 1 fail')).toBe('pass')
+  expect(verdict('npm test || echo done', '(fail) b')).toBe('pass')
+  // No output text available: the exit code decides, as before
+  expect(observe('Bash', pipe, { isError: false })?.test).toBe('pass')
+  expect(observe('Bash', pipe, { isError: true, text: '' })?.test).toBe('fail')
+})
+
 test('The test runner must be the command word', async () => {
   for (const cmd of ['npm i -D jest', 'pip install pytest', 'grep -r pytest .', 'ls jest']) {
     expect(isTestCommand(cmd)).toBe(false)

@@ -85,11 +85,19 @@ const bucketsSeen = new Set<number>()
 
 for (const file of transcripts(root)) {
   const isSub = file.includes(`${sep}subagents${sep}`)
-  let recs: Rec[]
+  let text: string
   try {
-    recs = readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line) as Rec)
+    text = readFileSync(file, 'utf8')
   } catch {
     continue
+  }
+  // A session still being written often ends in a half line; drop only that line, not the whole session
+  const recs: Rec[] = []
+  for (const line of text.split('\n')) {
+    if (!line) continue
+    try {
+      recs.push(JSON.parse(line) as Rec)
+    } catch {}
   }
   const calls = new Map<string, { command: string; t: number }>()
   const started = new Map<string, { name: string; t: number }>()

@@ -157,3 +157,34 @@ test('Reply date: /egg <command> is hidden from help and answers like an unknown
   expect((await $.command.run({ command: 'egg', args: d.command } as never)).text).toBe(unknown)
   expect((await $.command.run({ command: 'egg', args: 'help' } as never)).text).not.toContain(d.command)
 })
+
+test('Timed date: the session that sent the prompt warns when the ask is nearly over', async ($, on) => {
+  const d = spec('timed')
+  const toasts: string[] = []
+  const clock = wire(on, `2026-${pad(d.month)}-${pad(d.day)}T10:00`, ['terminal'], toasts)
+  await $.session.start({ cwd: '.', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'hi' })
+  await clock.advance((d.seconds - d.warnSeconds) * 1000 + 500)
+  expect(toasts).toContain(d.lines.warn.terminal)
+})
+
+test('Timed date: a session only following another one\'s ask shows the countdown but never warns', async ($, on) => {
+  const d = spec('timed')
+  const toasts: string[] = []
+  const shared: Record<string, unknown> = {}
+  const clock = wire(on, `2026-${pad(d.month)}-${pad(d.day)}T10:00`, ['terminal'], toasts, shared)
+  await $.session.start({ cwd: '.', surface: 'terminal', isInteractive: true })
+  const band = await $.ui.mount({ plugin: 'tea-egg', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  const key = Object.keys(shared).find(k => k.endsWith('-fake'))!
+  const save = structuredClone(shared[key]) as { dateMode: Record<string, unknown> }
+  const id = Object.entries(decodeSpoilers().dates).find(([, x]) => x.kind === 'timed')![0]
+  save.dateMode[`${id}:2026`] = { phase: 'run', startedAt: Date.UTC(2026, 9, 1, 2), from: 'live', got: 0, asks: 1, warned: false, terminal: false }
+  shared[key] = save
+  await clock.advance(5_000)
+  expect(await band.find({ type: 'Text', text: /^\d:\d\d$/ })).toBeDefined()
+  // Past the warning point, and past a whole minute tick
+  await clock.advance((d.seconds - d.warnSeconds) * 1000 + 5_000)
+  expect(toasts).not.toContain(d.lines.warn.terminal)
+  expect(toasts).not.toContain(d.lines.warn.desktop)
+  await band.unmount()
+})

@@ -62,8 +62,12 @@ export function onSessionOpen(prev: Save, now: number, t: LocalTime, isNewSessio
   // A save made before this version counts as made today: days missed before it are not made up
   save.installedOn ??= t.date
   save.clocks.lastTickAt = now // no catching up on time while closed
-  save.clocks.bucketStart = now
-  save.clocks.bucketActive = false
+  // The bucket is shared by every session: one still running was started (and maybe marked active) by another
+  // session, so only an expired one is reset here
+  if (now - save.clocks.bucketStart >= RULES.bucketMs) {
+    save.clocks.bucketStart = now
+    save.clocks.bucketActive = false
+  }
   let made = then(step, s => specialMakeup(s, t))
   made = then(made, s => datesCatchUp(s, now, t))
   if (isSpecialDay(t)) return then(made, s => specialSeen(s, t))
