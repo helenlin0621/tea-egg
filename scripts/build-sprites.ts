@@ -385,6 +385,7 @@ function writeTs(path: string, palette: number[], iconPalette: number[], ownPale
     `// Pixel strings: ${SIZE}×${SIZE} row by row, '.' transparent, 0–9 and a–v are palette indices (base-32).`,
     '// Dex icons (locked here, the rest in the encoded spoilers) use ICON_PALETTE, or their own entry in ICON_OWN_PALETTES;',
     '// Layers listed in LAYER_PALETTE_OF use that LAYER_PALETTES group; everything else uses PALETTE.',
+    '// The entries of sprites kept in the encoded spoilers are there too (its `palettes`), not here.',
     '',
     `export const PALETTE: readonly number[] = [${hex(palette)}]`,
     '',
@@ -768,9 +769,28 @@ function main(argv: string[]): number {
   }
   const pub = new Map([...grids].filter(([n]) => !spoilerNames.has(n)))
   const secret = Object.fromEntries([...grids].filter(([n]) => spoilerNames.has(n)))
-  writeTs(join(ROOT, 'hooks', 'sprites.ts'), palette, iconPalette, ownPalettes, layerPalettes, Object.fromEntries(layerGroup), pub, manifest.faceBox ?? null)
+  // A spoiler sprite's name and palette stay out of the public file as well as its pixels: the name alone tells
+  // that a prize or a costume exists. A layer group goes with them only when every layer in it is a spoiler
+  const isSecret = (n: string) => spoilerNames.has(n)
+  const secretGroups = new Set([...layerPalettes.keys()].filter(g => [...layerGroup].every(([n, of]) => of !== g || isSecret(n))))
+  const secretPalettes = {
+    own: Object.fromEntries([...ownPalettes].filter(([n]) => isSecret(n))),
+    layerOf: Object.fromEntries([...layerGroup].filter(([n]) => isSecret(n))),
+    layers: Object.fromEntries([...layerPalettes].filter(([g]) => secretGroups.has(g))),
+  }
+  writeTs(
+    join(ROOT, 'hooks', 'sprites.ts'),
+    palette,
+    iconPalette,
+    new Map([...ownPalettes].filter(([n]) => !isSecret(n))),
+    new Map([...layerPalettes].filter(([g]) => !secretGroups.has(g))),
+    Object.fromEntries([...layerGroup].filter(([n]) => !isSecret(n))),
+    pub,
+    manifest.faceBox ?? null,
+  )
   mkdirSync(join(ROOT, 'art-build'), { recursive: true })
   writeFileSync(join(ROOT, 'art-build', 'spoiler_sprites.json'), JSON.stringify(secret), 'utf8')
+  writeFileSync(join(ROOT, 'art-build', 'spoiler_palettes.json'), JSON.stringify(secretPalettes), 'utf8')
   const paletteOf = (n: string) =>
     ownPalettes.get(n) ?? (layerGroup.has(n) ? layerPalettes.get(layerGroup.get(n)!)! : iconNames.has(n) ? iconPalette : palette)
   writePreview(join(ROOT, 'art-build', 'preview.png'), paletteOf, pub)

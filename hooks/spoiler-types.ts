@@ -151,6 +151,9 @@ export type Spoilers = {
   dates: Record<string, DateSpec> // the others, by id (d2, d3, …)
   sprites: Record<string, string>
   spritesHd?: Record<string, string> // High-res PNGs for desktop (base64)
+  // Palettes of the sprites above, shaped like ICON_OWN_PALETTES, LAYER_PALETTE_OF and LAYER_PALETTES in sprites.ts.
+  // Optional: a spoilers.ts encoded before these moved here has none, and those sprites fall back to the shared palettes
+  palettes?: { own: Record<string, number[]>; layerOf: Record<string, string>; layers: Record<string, number[]> }
   // Translations: the top-level text is zh-TW; each language overrides only its text fields.
   // decodeSpoilers(lang) merges them in and leaves this field out of the result.
   i18n?: Partial<Record<Lang, SpoilerText>>

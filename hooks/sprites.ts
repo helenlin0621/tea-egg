@@ -2,6 +2,7 @@
 // Pixel strings: 48×48 row by row, '.' transparent, 0–9 and a–v are palette indices (base-32).
 // Dex icons (locked here, the rest in the encoded spoilers) use ICON_PALETTE, or their own entry in ICON_OWN_PALETTES;
 // Layers listed in LAYER_PALETTE_OF use that LAYER_PALETTES group; everything else uses PALETTE.
+// The entries of sprites kept in the encoded spoilers are there too (its `palettes`), not here.
 
 export const PALETTE: readonly number[] = [0x421102, 0xfd9ba0, 0x652008, 0x76280c, 0x933b19, 0x666012, 0x999911, 0xffb40f, 0xb65124, 0xc6a6ac, 0xf84c6b, 0x68103f, 0xf06e80, 0xfee956, 0xb25a31, 0xa88166, 0x2a81e9, 0x4792ec, 0xd6cfce, 0x9dc9e9, 0xbd758e, 0xfe8f2f, 0x000000, 0xd26730, 0xe1793d, 0xfdf790, 0xef9f64, 0xf8b975, 0xf6b885, 0xfad3a8, 0xfdf2e3]
 

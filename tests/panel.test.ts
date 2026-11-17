@@ -2,7 +2,7 @@ import { test, expect } from 'claude-code/testing'
 import { ASCII_EGG, dexArt, eggArt, eggLayers, panelLines } from '../hooks/panel'
 import { strWidth } from '../hooks/view'
 import { newSave } from '../hooks/model'
-import { SPRITES } from '../hooks/sprites'
+import { ICON_OWN_PALETTES, ICON_PALETTE, LAYER_PALETTE_OF, LAYER_PALETTES, SPRITES } from '../hooks/sprites'
 import { decodeSpoilers } from '../hooks/spoilers'
 import { at, ms } from './helpers'
 
@@ -133,4 +133,22 @@ test('Every dex slot has art on both surfaces, locked and owned', async () => {
   // Terminal dex icons draw with their own palette: no cell falls back to a missing color
   const art = dexArt(decodeSpoilers().dexSlots[0]!, true, 'terminal')
   expect(art?.kind === 'raster' && !art.cells.includes('undefined')).toBe(true)
+})
+
+test('Encoded sprites carry their palettes with them, and the public sprite file does not name them', async () => {
+  const { palettes, sprites } = decodeSpoilers()
+  const own = Object.entries(palettes?.own ?? {})
+  expect(own.length).toBeGreaterThan(0)
+  for (const [id, palette] of own) {
+    expect(ICON_OWN_PALETTES[id]).toBe(undefined)
+    const art = dexArt(id, true, 'desktop')
+    const first = [...sprites[id]!].find(c => c !== '.')!
+    const hex = (n: number) => '#' + n.toString(16).padStart(6, '0')
+    // Drawn with its own palette: the shared icon palette has another color at that index
+    expect(palette[parseInt(first, 32)]).not.toBe(ICON_PALETTE[parseInt(first, 32)])
+    expect(art?.kind === 'svg' && art.source.includes(hex(palette[parseInt(first, 32)]!))).toBe(true)
+  }
+  for (const name of Object.keys(palettes?.layerOf ?? {})) expect(LAYER_PALETTE_OF[name]).toBe(undefined)
+  for (const group of Object.keys(palettes?.layers ?? {})) expect(LAYER_PALETTES[group]).toBe(undefined)
+  for (const name of Object.keys(sprites)) expect(SPRITES[name]).toBe(undefined)
 })

@@ -50,8 +50,9 @@ function layersOf(keys: readonly string[]): Layer[] {
 
 // Layers in a group of their own (a costume and its faces) use that group's palette
 const paletteOfLayers = (keys: readonly string[]): readonly number[] => {
-  const group = keys.map(k => LAYER_PALETTE_OF[k]).find(g => g !== undefined)
-  return (group !== undefined ? LAYER_PALETTES[group] : undefined) ?? PALETTE
+  const hidden = decodeSpoilers().palettes
+  const group = keys.map(k => LAYER_PALETTE_OF[k] ?? hidden?.layerOf[k]).find(g => g !== undefined)
+  return (group !== undefined ? LAYER_PALETTES[group] ?? hidden?.layers[group] : undefined) ?? PALETTE
 }
 
 // The keys to stack now, special dates included (dates.ts); null when a special date shows a dex icon instead
@@ -158,7 +159,7 @@ export function dexArt(id: string, owned: boolean, surface: string): Art | null 
   // An egg whose picture isn't drawn yet keeps the locked picture; its caption still shows the name once owned
   const pixels = owned ? decodeSpoilers().sprites[id] ?? SPRITES.locked : SPRITES.locked
   if (!pixels) return null
-  const own = owned && pixels !== SPRITES.locked ? ICON_OWN_PALETTES[id] : undefined
+  const own = owned && pixels !== SPRITES.locked ? ICON_OWN_PALETTES[id] ?? decodeSpoilers().palettes?.own[id] : undefined
   return artOf(pixels, surface, own ?? ICON_PALETTE)
 }
 

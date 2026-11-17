@@ -10,6 +10,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SOURCE = join(ROOT, 'spoilers.source.json')
 const SPRITES = join(ROOT, 'art-build', 'spoiler_sprites.json')
 const SPRITES_HD = join(ROOT, 'art-build', 'spoiler_sprites_hd.json')
+const PALETTES = join(ROOT, 'art-build', 'spoiler_palettes.json')
 const OUT =join(ROOT, 'hooks', 'spoilers.ts')
 const LINE = 96
 
@@ -53,6 +54,7 @@ function payload(): Record<string, unknown> {
   if (existsSync(SPRITES)) data.sprites = JSON.parse(readFileSync(SPRITES, 'utf8'))
   data.sprites ??= {}
   data.spritesHd = existsSync(SPRITES_HD) ? JSON.parse(readFileSync(SPRITES_HD, 'utf8')) : {}
+  if (existsSync(PALETTES)) data.palettes = JSON.parse(readFileSync(PALETTES, 'utf8'))
   return data
 }
 
